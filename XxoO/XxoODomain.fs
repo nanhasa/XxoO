@@ -8,6 +8,17 @@ module XxoO =
     type VerticalPosition = Top | VCenter | Bottom
     type Position = HorizontalPosition * VerticalPosition
 
+    let cellPositions : Position list =
+        [ Left, Top
+          HCenter, Top
+          Right, Top
+          Left, VCenter
+          HCenter, VCenter
+          Right, VCenter
+          Left, Bottom
+          HCenter, Bottom
+          Right, Bottom ]
+
     type GameStatus =
         | InProcess
         | Won of Player
@@ -18,8 +29,8 @@ module XxoO =
     type NextSubGame<'SubGameState> = 'SubGameState
     type FinishedSubGames<'SubGameState> = 'SubGameState list
     type MoveResult<'GameState> =
-        | InvalidMove of GameState : 'GameState * nextPlayer : Player
-        | State of GameState : 'GameState * nextPlayer : Player
+        | InvalidMove of GameState : 'GameState
+        | State of GameState : 'GameState
         | GameWon of GameState : 'GameState * Player
         | TieGame of GameState : 'GameState
 
@@ -50,17 +61,6 @@ module XxoOImplementation =
         { subGames : SubGameState list
           currentSubGame : SubGamePosition Option
           player : Player }
-
-    let cellPositions : Position list =
-        [ Left, Top
-          Left, VCenter
-          Left, Bottom
-          HCenter, Top
-          HCenter, VCenter
-          HCenter, Bottom
-          Right, Top
-          Right, VCenter
-          Right, Bottom ]
 
     let cell state position = 
         { state = state
@@ -96,10 +96,24 @@ module XxoOImplementation =
             | InProcess -> true
             | _ -> false)
 
+    let isCellEmpty (cell : Cell) =
+        match cell.state with
+        | Empty -> true
+        | _ -> false
+
+    let emptyCells subGame =
+        subGame.cells |> List.where isCellEmpty
+
     let subGamesWonBy gameState player =
         gameState.subGames |> List.where (fun sub ->
             match sub.state with
-            | Won p when p = player -> false
+            | Won p when p = player -> true
+            | _ -> false)
+
+    let cellsPlayedBy subGame player =
+        subGame.cells |> List.where (fun cell ->
+            match cell.state with
+            | Played p when p = player -> true
             | _ -> true)
 
     let winningCombinations =
@@ -130,7 +144,7 @@ module XxoOImplementation =
         | unfinishedCount ->
             let wonSubGamePositions player = subGamesWonBy gameState player |> List.map (fun sub -> sub.position)
             let hasPlayerWon = playerHasWinningCombination winningCombinations
-            match wonSubGamePositions PlayerX |> hasPlayerWon with
+            match wonSubGamePositions gameState.player |> hasPlayerWon with
             | true ->
                 Won gameState.player
             | false ->
@@ -138,10 +152,20 @@ module XxoOImplementation =
                 then Tie
                 else InProcess
 
-    let isCellEmpty (cell : Cell) =
-        match cell.state with
-        | Empty -> true
-        | _ -> false
+    let subGameStatus subGame player =
+        match subGame |> emptyCells |> List.length with
+        | unfinishedCount when unfinishedCount >= 7 ->
+            InProcess
+        | unfinishedCount ->
+            let playerPlayedCellPositions player = cellsPlayedBy subGame player |> List.map (fun sub -> sub.position)
+            let hasPlayerWon = playerHasWinningCombination winningCombinations
+            match playerPlayedCellPositions player |> hasPlayerWon with
+            | true ->
+                Won player
+            | false ->
+                if unfinishedCount = 0
+                then Tie
+                else InProcess
 
     let getCurrentSubGame : GetCurrentSubGamePosition<GameState> =
         fun gameState -> gameState.currentSubGame
@@ -171,9 +195,12 @@ module XxoOImplementation =
         match gameState.currentSubGame with
         | Some subPosition ->
             if subGamePosition = subPosition then
-                gameState
-                |> getCell subGamePosition cellPosition 
-                |> isCellEmpty
+                match gameState |> getSubGame subGamePosition |> fun sub -> sub.state with
+                | InProcess ->
+                    gameState
+                    |> getCell subGamePosition cellPosition 
+                    |> isCellEmpty
+                | _ -> false
             else
                 false
         | None ->
@@ -200,20 +227,25 @@ module XxoOImplementation =
 
         let updateSubGame (gameState : GameState, subGame : SubGameState, cells : Cell list) =
             let sub = subGame |> updateSubCells cells
-            gameState, sub
+            gameState, { sub with state = subGameStatus subGame gameState.player }
 
         let replaceSamePositionSubGame (gameState : GameState, subGame : SubGameState) = 
             gameState.subGames |> List.map (fun sub -> if sub.position = subGame.position then subGame else sub)
 
         let updatedSubGames = updateCells >> updateSubGame >> replaceSamePositionSubGame
 
-        let updatedGameState = 
-            { gameState with 
-                currentSubGame = Some cellPosition
-                subGames = updatedSubGames (gameState, subGamePosition) }
+        let nextSubGame gameState cellPosition = 
+            if gameState |> getSubGame subGamePosition |> isSubGameFinished
+            then None
+            else 
+                if gameState |> getSubGame cellPosition |> isSubGameFinished
+                then None
+                else Some cellPosition
+
+        let updatedGameState = { gameState with subGames = updatedSubGames (gameState, subGamePosition) }
 
         // Set player value after evaluating the game status
-        { updatedGameState with player = nextPlayer updatedGameState.player }, gameStatus updatedGameState
+        { updatedGameState with player = nextPlayer updatedGameState.player; currentSubGame = nextSubGame updatedGameState cellPosition }, gameStatus updatedGameState
 
     let playerMove : PlayerMove<GameState> =
         fun subGamePosition cellPosition gameState ->
@@ -221,19 +253,21 @@ module XxoOImplementation =
             | true ->
                 match makeMove subGamePosition cellPosition gameState with
                 | newGameState, InProcess ->
-                    State (newGameState, gameState.player)
+                    State newGameState
                 | newGameState, Tie ->
                     TieGame newGameState
                 | newGameState, Won player ->
                     GameWon (newGameState, player)
             | false ->
-                InvalidMove (gameState, gameState.player)
+                InvalidMove gameState
 
 module XxoOAPI =
     open XxoO
     open XxoOImplementation
 
-    type API =
+    type Game = GameState
+
+    type XxoOAPI =
         { newGame : NewGame<GameState>
           playerMove : PlayerMove<GameState>
           getCell : GetCell<GameState, Cell>

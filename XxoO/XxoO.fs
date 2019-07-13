@@ -5,55 +5,138 @@ open System.Diagnostics
 open Fabulous
 open Fabulous.XamarinForms
 open Xamarin.Forms
+open Domain.XxoO
+open Domain.XxoOAPI
 
-module App = 
+module App =
+    
+    let api = getAPI
+
     type Model = 
-      { Count : int
-        Step : int
-        TimerOn: bool }
+      { gameState : Game
+        gameStatus : GameStatus }
 
     type Msg = 
-        | Increment 
-        | Decrement 
-        | Reset
-        | SetStep of int
-        | TimerToggled of bool
-        | TimedTick
+        | NewGame
+        | PlayerMove of SubGamePosition * CellPosition
 
-    let initModel = { Count = 0; Step = 1; TimerOn=false }
+    let initModel = { gameState = api.newGame; gameStatus = InProcess }
 
     let init () = initModel, Cmd.none
 
-    let timerCmd =
-        async { do! Async.Sleep 200
-                return TimedTick }
-        |> Cmd.ofAsyncMsg
+    let playerMoved model subGamePosition cellPosition =
+        match model.gameState |> api.playerMove subGamePosition cellPosition with
+        | State gameState | InvalidMove gameState ->
+            { model with gameState = gameState; gameStatus = InProcess }, Cmd.none
+        | GameWon (gameState, player) ->
+            { model with gameState = gameState; gameStatus = Won player }, Cmd.none
+        | TieGame gameState ->
+            { model with gameState = gameState; gameStatus = Tie }, Cmd.none
 
     let update msg model =
         match msg with
-        | Increment -> { model with Count = model.Count + model.Step }, Cmd.none
-        | Decrement -> { model with Count = model.Count - model.Step }, Cmd.none
-        | Reset -> init ()
-        | SetStep n -> { model with Step = n }, Cmd.none
-        | TimerToggled on -> { model with TimerOn = on }, (if on then timerCmd else Cmd.none)
-        | TimedTick -> 
-            if model.TimerOn then 
-                { model with Count = model.Count + model.Step }, timerCmd
-            else 
-                model, Cmd.none
+        | NewGame -> init()
+        | PlayerMove (subGamePos, cellPos) -> playerMoved model subGamePos cellPos
+
+    let currentPlayer player =
+        match player with
+        | PlayerX -> "Player X"
+        | PlayerO -> "Player O"
+
+    let cellOwner cellStatus =
+        match cellStatus with
+        | Played PlayerX -> "X"
+        | Played PlayerO -> "O"
+        | Empty -> ""
+
+    let cellColor cellStatus =
+        match cellStatus with
+        | Played PlayerX -> Color.LightSkyBlue
+        | Played PlayerO -> Color.Orange
+        | Empty -> Color.AntiqueWhite
+
+    let wonSubColor player =
+        match player with
+        | PlayerX -> Color.LightSkyBlue
+        | PlayerO -> Color.Orange
+
+    let gridButtons subGamePos model dispatch =
+        let cellStatus cellPos = model.gameState |> api.getCell subGamePos cellPos |> fun cell -> cell.state
+        cellPositions
+        |> List.mapi (fun i cellPos ->
+            let status = cellStatus cellPos
+            View.Button(
+                text = (status |> cellOwner), 
+                fontSize = 11,
+                textColor = Color.White, 
+                backgroundColor = (status |> cellColor),
+                command = (fun _ -> dispatch (PlayerMove (subGamePos, cellPos)))
+            ).GridRow(i / 3).GridColumn(i % 3))
+
+    let gridBackgroundColor subGamePos model =
+        match model.gameState.currentSubGame with
+        | Some sub when sub = subGamePos -> Color.Lime
+        | Some _ -> Color.WhiteSmoke
+        | None -> Color.WhiteSmoke
+
+    let subGrids model dispatch =
+        cellPositions
+        |> List.mapi (fun i pos ->
+            match model.gameState |> api.getSubGame pos |> fun sub -> sub.state with
+            | Won player ->
+                View.BoxView(wonSubColor player, cornerRadius = CornerRadius(10.)).GridRow(i / 3).GridColumn(i % 3)
+            | Tie ->
+                View.BoxView(Color.Gray, cornerRadius = CornerRadius(10.)).GridRow(i / 3).GridColumn(i % 3)
+            | InProcess ->
+                View.Grid(
+                    rowdefs = ["*"; "*"; "*"], 
+                    coldefs = ["*"; "*"; "*"],
+                    backgroundColor = (gridBackgroundColor pos model),
+                    children = (gridButtons pos model dispatch)
+                ).GridRow(i / 3).GridColumn(i % 3))
 
     let view (model: Model) dispatch =
         View.ContentPage(
           content = View.StackLayout(padding = 20.0, verticalOptions = LayoutOptions.Center,
-            children = [ 
-                View.Label(text = sprintf "%d" model.Count, horizontalOptions = LayoutOptions.Center, widthRequest=200.0, horizontalTextAlignment=TextAlignment.Center)
-                View.Button(text = "Increment", command = (fun () -> dispatch Increment), horizontalOptions = LayoutOptions.Center)
-                View.Button(text = "Decrement", command = (fun () -> dispatch Decrement), horizontalOptions = LayoutOptions.Center)
-                View.Label(text = "Timer", horizontalOptions = LayoutOptions.Center)
-                View.Switch(isToggled = model.TimerOn, toggled = (fun on -> dispatch (TimerToggled on.Value)), horizontalOptions = LayoutOptions.Center)
-                View.Slider(minimumMaximum = (0.0, 10.0), value = double model.Step, valueChanged = (fun args -> dispatch (SetStep (int (args.NewValue + 0.5)))), horizontalOptions = LayoutOptions.FillAndExpand)
-                View.Label(text = sprintf "Step size: %d" model.Step, horizontalOptions = LayoutOptions.Center) 
-                View.Button(text = "Reset", horizontalOptions = LayoutOptions.Center, command = (fun () -> dispatch Reset), canExecute = (model <> initModel))
+            children = [
+                match model.gameStatus with
+                | InProcess ->
+                    yield View.Label(
+                        text = currentPlayer model.gameState.player, 
+                        verticalTextAlignment = TextAlignment.Start, 
+                        horizontalTextAlignment = TextAlignment.Center, 
+                        fontAttributes = FontAttributes.Bold, 
+                        fontSize = 20)
+                    yield View.Grid (
+                        rowdefs = ["*"; "*"; "*"], 
+                        coldefs = ["*"; "*"; "*"], 
+                        children = subGrids model dispatch)
+                | Won player ->
+                    yield View.Label(
+                        text = sprintf "%s won the game! Congratulations!!" (currentPlayer player),
+                        verticalTextAlignment = TextAlignment.Start, 
+                        horizontalTextAlignment = TextAlignment.Center, 
+                        fontAttributes = FontAttributes.Bold, 
+                        fontSize = 30)
+                    yield View.Button(
+                        text = "Start again",
+                        fontSize = 11,
+                        textColor = Color.White, 
+                        backgroundColor = Color.Lavender, 
+                        command = (fun _ -> dispatch NewGame))
+                | Tie ->
+                    yield View.Label(
+                        text = "It's a tie game! Better luck next time..",
+                        verticalTextAlignment = TextAlignment.Start, 
+                        horizontalTextAlignment = TextAlignment.Center, 
+                        fontAttributes = FontAttributes.Bold, 
+                        fontSize = 30)
+                    yield View.Button(
+                        text = "Start again",
+                        fontSize = 11,
+                        textColor = Color.White, 
+                        backgroundColor = Color.Lavender, 
+                        command = (fun _ -> dispatch NewGame))
             ]))
 
     // Note, this declaration is needed if you enable LiveUpdate
