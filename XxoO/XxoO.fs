@@ -61,28 +61,28 @@ module App =
         | PlayerO -> Color.Orange
 
     let gridButtons subGamePos model dispatch =
-        let cellStatus cellPos = model.gameState |> api.getCell subGamePos cellPos |> fun cell -> cell.state
+        let cellStatus cellPos = model.gameState |> api.getCell subGamePos cellPos |> fun cell -> cell.status
         cellPositions
         |> List.mapi (fun i cellPos ->
             let status = cellStatus cellPos
             View.Button(
                 text = (status |> cellOwner), 
                 fontSize = 11,
-                textColor = Color.White, 
+                textColor = Color.White,
                 backgroundColor = (status |> cellColor),
                 command = (fun _ -> dispatch (PlayerMove (subGamePos, cellPos)))
             ).GridRow(i / 3).GridColumn(i % 3))
 
     let gridBackgroundColor subGamePos model =
         match model.gameState.currentSubGame with
-        | Some sub when sub = subGamePos -> Color.Lime
+        | Some sub when sub = subGamePos -> Color.LightGreen
         | Some _ -> Color.WhiteSmoke
         | None -> Color.WhiteSmoke
 
     let subGrids model dispatch =
         cellPositions
         |> List.mapi (fun i pos ->
-            match model.gameState |> api.getSubGame pos |> fun sub -> sub.state with
+            match model.gameState |> api.getSubGame pos |> fun sub -> sub.status with
             | Won player ->
                 View.BoxView(wonSubColor player, cornerRadius = CornerRadius(10.)).GridRow(i / 3).GridColumn(i % 3)
             | Tie ->
@@ -122,7 +122,7 @@ module App =
                         text = "Start again",
                         fontSize = 11,
                         textColor = Color.White, 
-                        backgroundColor = Color.Lavender, 
+                        backgroundColor = Color.Blue, 
                         command = (fun _ -> dispatch NewGame))
                 | Tie ->
                     yield View.Label(
