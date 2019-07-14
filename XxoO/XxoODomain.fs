@@ -224,14 +224,11 @@ module XxoOImplementation =
         | Some _ -> false
         | None -> subGame |> moveIsValidIfCellIsEmpty
 
-    let nextSubGamePosition subGamePos cellPos gameState =
-        match gameState |> findSubGame subGamePos |> isSubGameFinished with
-        | true -> None
-        | false ->
-            let subGame = gameState |> findSubGame cellPos
-            if subGame |> isSubGameInProcess
-            then Some (subGame |> subGamePosition)
-            else None
+    let nextSubGamePosition cellPosition gameState =
+        let subGame = gameState |> findSubGame cellPosition
+        if subGame |> isSubGameInProcess
+        then Some (subGame |> subGamePosition)
+        else None
 
     let nextPlayer previousplayer =
         match previousplayer with
@@ -253,7 +250,7 @@ module XxoOImplementation =
             { gameState with subGames = (gameState |> updateSubGame player) :: (gameState.subGames |> getAllButPlayedSubGame) }
             |> fun gameState -> 
                 { gameState with
-                    currentSubGame = gameState |> nextSubGamePosition subGamePosition cellPosition
+                    currentSubGame = gameState |> nextSubGamePosition cellPosition
                     player = nextPlayer player }
 
         newGameState, newGameState |> calculateGameStatus player

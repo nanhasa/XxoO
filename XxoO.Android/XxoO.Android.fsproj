@@ -27,7 +27,7 @@
     <RestorePackages>true</RestorePackages>
     <OtherFlags>/warnon:1182</OtherFlags>
     <WarningLevel>4</WarningLevel>
-    <SelectedDevice>slim</SelectedDevice>
+    <SelectedDevice>Samsung SM-G970F</SelectedDevice>
     <DefaultDevice>slim</DefaultDevice>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">

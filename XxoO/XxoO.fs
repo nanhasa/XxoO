@@ -67,9 +67,10 @@ module App =
             let status = cellStatus cellPos
             View.Button(
                 text = (status |> cellOwner), 
-                fontSize = 11,
+                fontSize = 15,
                 textColor = Color.White,
                 backgroundColor = (status |> cellColor),
+                padding = Thickness 0.1,
                 command = (fun _ -> dispatch (PlayerMove (subGamePos, cellPos)))
             ).GridRow(i / 3).GridColumn(i % 3))
 
@@ -91,13 +92,16 @@ module App =
                 View.Grid(
                     rowdefs = ["*"; "*"; "*"], 
                     coldefs = ["*"; "*"; "*"],
+                    margin = Thickness 3.,
                     backgroundColor = (gridBackgroundColor pos model),
                     children = (gridButtons pos model dispatch)
                 ).GridRow(i / 3).GridColumn(i % 3))
 
     let view (model: Model) dispatch =
         View.ContentPage(
-          content = View.StackLayout(padding = 20.0, verticalOptions = LayoutOptions.Center,
+          content = View.StackLayout(
+            padding = 20.0, 
+            verticalOptions = LayoutOptions.Center,
             children = [
                 match model.gameStatus with
                 | InProcess ->
@@ -109,7 +113,7 @@ module App =
                         fontSize = 20)
                     yield View.Grid (
                         rowdefs = ["*"; "*"; "*"], 
-                        coldefs = ["*"; "*"; "*"], 
+                        coldefs = ["*"; "*"; "*"],
                         children = subGrids model dispatch)
                 | Won player ->
                     yield View.Label(
