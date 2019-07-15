@@ -1,6 +1,7 @@
 ﻿// Copyright 2018-2019 Fabulous contributors. See LICENSE.md for license.
 namespace XxoO
 
+open System
 open System.Diagnostics
 open Fabulous
 open Fabulous.XamarinForms
@@ -14,13 +15,17 @@ module App =
 
     type Model = 
       { gameState : Game
-        gameStatus : GameStatus }
+        gameStatus : GameStatus
+        isMasterPresented : bool
+        nightMode : bool }
 
     type Msg = 
         | NewGame
         | PlayerMove of SubGamePosition * CellPosition
+        | IsMasterPresentedChanged of bool
+        | NightModeChanged of bool
 
-    let initModel = { gameState = api.newGame; gameStatus = InProcess }
+    let initModel = { gameState = api.newGame; gameStatus = InProcess; isMasterPresented = false; nightMode = false }
 
     let init () = initModel, Cmd.none
 
@@ -35,8 +40,10 @@ module App =
 
     let update msg model =
         match msg with
-        | NewGame -> init()
+        | NewGame -> { model with gameState = api.newGame; gameStatus = InProcess; isMasterPresented = false }, Cmd.none
         | PlayerMove (subGamePos, cellPos) -> playerMoved model subGamePos cellPos
+        | IsMasterPresentedChanged b -> { model with isMasterPresented = b }, Cmd.none
+        | NightModeChanged b -> { model with nightMode = b }, Cmd.none
 
     let currentPlayer player =
         match player with
@@ -49,16 +56,46 @@ module App =
         | Played PlayerO -> "O"
         | Empty -> ""
 
-    let cellColor cellStatus =
-        match cellStatus with
-        | Played PlayerX -> Color.LightSkyBlue
-        | Played PlayerO -> Color.Orange
-        | Empty -> Color.AntiqueWhite
+    let nightModeSafePlayerXCell model =
+        if model.nightMode
+        then Color.FromHex "3B6E67"
+        else Color.LightSkyBlue
 
-    let wonSubColor player =
+    let nightModeSafePlayerOCell model =
+        if model.nightMode
+        then Color.FromHex "873831"
+        else Color.Orange
+
+    let nightModeSafeEmptyCell model =
+        if model.nightMode
+        then Color.FromHex "DDD4E7"
+        else Color.AntiqueWhite
+
+    let cellColor cellStatus model =
+        match cellStatus with
+        | Played PlayerX -> nightModeSafePlayerXCell model
+        | Played PlayerO -> nightModeSafePlayerOCell model
+        | Empty -> nightModeSafeEmptyCell model
+
+    let wonSubColor player model =
         match player with
-        | PlayerX -> Color.LightSkyBlue
-        | PlayerO -> Color.Orange
+        | PlayerX -> nightModeSafePlayerXCell model
+        | PlayerO -> nightModeSafePlayerOCell model
+
+    let nightModeSafeTextColor model =
+        if model.nightMode 
+        then Color.WhiteSmoke
+        else Color.Black
+
+    let nightModeSafeGridSelectionBackgroundColor model =
+        if model.nightMode
+        then Color.ForestGreen
+        else Color.LightSeaGreen
+
+    let backgroundColor model =
+        if model.nightMode
+        then Color.FromHex "#243447"
+        else Color.White
 
     let gridButtons subGamePos model dispatch =
         let cellStatus cellPos = model.gameState |> api.getCell subGamePos cellPos |> fun cell -> cell.status
@@ -69,25 +106,24 @@ module App =
                 text = (status |> cellOwner), 
                 fontSize = 15,
                 textColor = Color.White,
-                backgroundColor = (status |> cellColor),
+                backgroundColor = (model |> cellColor status),
                 padding = Thickness 0.1,
                 command = (fun _ -> dispatch (PlayerMove (subGamePos, cellPos)))
             ).GridRow(i / 3).GridColumn(i % 3))
 
     let gridBackgroundColor subGamePos model =
         match model.gameState.currentSubGame with
-        | Some sub when sub = subGamePos -> Color.LightGreen
-        | Some _ -> Color.WhiteSmoke
-        | None -> Color.WhiteSmoke
+        | Some sub when sub = subGamePos -> nightModeSafeGridSelectionBackgroundColor model
+        | _ -> backgroundColor model
 
     let subGrids model dispatch =
         cellPositions
         |> List.mapi (fun i pos ->
             match model.gameState |> api.getSubGame pos |> fun sub -> sub.status with
             | Won player ->
-                View.BoxView(wonSubColor player, cornerRadius = CornerRadius(10.)).GridRow(i / 3).GridColumn(i % 3)
+                View.BoxView(wonSubColor player model, cornerRadius = CornerRadius(10.), margin = Thickness 3.).GridRow(i / 3).GridColumn(i % 3)
             | Tie ->
-                View.BoxView(Color.Gray, cornerRadius = CornerRadius(10.)).GridRow(i / 3).GridColumn(i % 3)
+                View.BoxView(Color.DarkGray, cornerRadius = CornerRadius(10.), margin = Thickness 3.).GridRow(i / 3).GridColumn(i % 3)
             | InProcess ->
                 View.Grid(
                     rowdefs = ["*"; "*"; "*"], 
@@ -97,52 +133,87 @@ module App =
                     children = (gridButtons pos model dispatch)
                 ).GridRow(i / 3).GridColumn(i % 3))
 
-    let view (model: Model) dispatch =
-        View.ContentPage(
-          content = View.StackLayout(
-            padding = 20.0, 
-            verticalOptions = LayoutOptions.Center,
-            children = [
-                match model.gameStatus with
-                | InProcess ->
-                    yield View.Label(
-                        text = currentPlayer model.gameState.player, 
-                        verticalTextAlignment = TextAlignment.Start, 
-                        horizontalTextAlignment = TextAlignment.Center, 
-                        fontAttributes = FontAttributes.Bold, 
-                        fontSize = 20)
-                    yield View.Grid (
-                        rowdefs = ["*"; "*"; "*"], 
-                        coldefs = ["*"; "*"; "*"],
-                        children = subGrids model dispatch)
-                | Won player ->
-                    yield View.Label(
-                        text = sprintf "%s won the game! Congratulations!!" (currentPlayer player),
-                        verticalTextAlignment = TextAlignment.Start, 
-                        horizontalTextAlignment = TextAlignment.Center, 
-                        fontAttributes = FontAttributes.Bold, 
-                        fontSize = 30)
-                    yield View.Button(
-                        text = "Start again",
-                        fontSize = 11,
-                        textColor = Color.White, 
-                        backgroundColor = Color.Blue, 
-                        command = (fun _ -> dispatch NewGame))
-                | Tie ->
-                    yield View.Label(
-                        text = "It's a tie game! Better luck next time..",
-                        verticalTextAlignment = TextAlignment.Start, 
-                        horizontalTextAlignment = TextAlignment.Center, 
-                        fontAttributes = FontAttributes.Bold, 
-                        fontSize = 30)
-                    yield View.Button(
-                        text = "Start again",
-                        fontSize = 11,
-                        textColor = Color.White, 
-                        backgroundColor = Color.Lavender, 
-                        command = (fun _ -> dispatch NewGame))
-            ]))
-
+    let view (model : Model) dispatch =
+        View.MasterDetailPage(
+            useSafeArea = true,
+            masterBehavior = MasterBehavior.Popover,
+            isPresented = model.isMasterPresented,
+            isPresentedChanged = (fun b -> dispatch (IsMasterPresentedChanged b)),
+            backgroundColor = backgroundColor model,
+            master = 
+                View.ContentPage(
+                    title = "Settings",
+                    useSafeArea = true,
+                    backgroundColor = backgroundColor model,
+                    content = View.StackLayout(
+                        children = [
+                            View.TableView(
+                                items = [ "Screen", [ View.SwitchCell(
+                                                        on = false,
+                                                        text = "Night mode",
+                                                        onChanged = (fun args -> dispatch (NightModeChanged args.Value))) ]])
+                                                
+                            View.Button(
+                                text = "New game", 
+                                fontSize = 15,
+                                textColor = Color.White,
+                                backgroundColor = Color.DarkSlateBlue,
+                                command = (fun _ -> dispatch NewGame)) ])),
+            detail = 
+                View.ContentPage(
+                    title = "XxoO",
+                    useSafeArea = true,
+                    backgroundColor = backgroundColor model,
+                    content = View.StackLayout(
+                      padding = 20.0, 
+                      verticalOptions = LayoutOptions.Center,
+                      children = [
+                          match model.gameStatus with
+                          | InProcess ->
+                              yield View.Label(
+                                  text = currentPlayer model.gameState.player,
+                                  textColor = nightModeSafeTextColor model,
+                                  margin = Thickness 3.,
+                                  verticalTextAlignment = TextAlignment.Start, 
+                                  horizontalTextAlignment = TextAlignment.Center, 
+                                  fontAttributes = FontAttributes.Bold, 
+                                  fontSize = 20)
+                              yield View.Grid (
+                                  rowdefs = ["*"; "*"; "*"], 
+                                  coldefs = ["*"; "*"; "*"],
+                                  backgroundColor = backgroundColor model,
+                                  children = subGrids model dispatch)
+                          | Won player ->
+                              yield View.Label(
+                                  text = sprintf "%s won the game! Congratulations!!" (currentPlayer player),
+                                  textColor = nightModeSafeTextColor model,
+                                  margin = Thickness 3.,
+                                  verticalTextAlignment = TextAlignment.Start, 
+                                  horizontalTextAlignment = TextAlignment.Center, 
+                                  fontAttributes = FontAttributes.Bold, 
+                                  fontSize = 30)
+                              yield View.Button(
+                                  text = "Start again",
+                                  fontSize = 11,
+                                  textColor = Color.White, 
+                                  backgroundColor = Color.DarkSlateBlue, 
+                                  command = (fun _ -> dispatch NewGame))
+                          | Tie ->
+                              yield View.Label(
+                                  text = "It's a tie game! Better luck next time..",
+                                  textColor = nightModeSafeTextColor model,
+                                  margin = Thickness 3.,
+                                  verticalTextAlignment = TextAlignment.Start, 
+                                  horizontalTextAlignment = TextAlignment.Center, 
+                                  fontAttributes = FontAttributes.Bold, 
+                                  fontSize = 30)
+                              yield View.Button(
+                                  text = "Start again",
+                                  fontSize = 11,
+                                  textColor = Color.White, 
+                                  backgroundColor = Color.DarkSlateBlue, 
+                                  command = (fun _ -> dispatch NewGame)) ])))
+        
     // Note, this declaration is needed if you enable LiveUpdate
     let program = Program.mkProgram init update view
 
@@ -165,7 +236,6 @@ type App () as app =
 
     // Uncomment this code to save the application state to app.Properties using Newtonsoft.Json
     // See https://fsprojects.github.io/Fabulous/models.html for further  instructions.
-#if APPSAVE
     let modelId = "model"
     override __.OnSleep() = 
 
@@ -193,6 +263,5 @@ type App () as app =
     override this.OnStart() = 
         Console.WriteLine "OnStart: using same logic as OnResume()"
         this.OnResume()
-#endif
 
 

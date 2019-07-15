@@ -191,10 +191,9 @@ module XxoOImplementation =
                 InProcess
 
     let calculateSubGameStatus player subGame =
-        match subGame |> emptyCells |> List.length with
-        | unfinishedCount when unfinishedCount = 0 ->
-            Tie
-        | unfinishedCount when unfinishedCount >= 7 ->
+        let emptyCellCount = subGame |> emptyCells |> List.length
+        match emptyCellCount with
+        | emptyCells when emptyCells >= 7 ->
             InProcess
         | _ ->
             let playerWon = cellsPlayedBy player >> List.map cellPosition >> hasPlayerWon
@@ -203,6 +202,9 @@ module XxoOImplementation =
                 Won player
             | false ->
                 InProcess
+        |> function
+            | InProcess -> if emptyCellCount = 0 then Tie else InProcess
+            | status -> status
 
     let getSubGame : GetSubGame<GameState, SubGame> =
         fun subGamePosition gameState -> findSubGame subGamePosition gameState
