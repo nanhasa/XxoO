@@ -229,16 +229,15 @@ module XxoOImplementation =
         let updateSubGame player =
             subGameByPosition subGamePosition
             >> fun sub -> { sub with cells = playedCell :: (sub.cells |> getAllButPlayedCells) }
-            >> fun sub -> { sub with status = calculateStatus player (sub |> emptyCells |> List.length) (hasPlayerWonSubGame sub) }
+            >> fun sub -> { sub with status = calculateStatus player (sub |> emptyCells |> List.length) (sub |> hasPlayerWonSubGame) }
 
-        let newGameState =
-            { gameState with subGames = (gameState |> updateSubGame player) :: (gameState.subGames |> getAllButPlayedSubGame) }
-            |> fun gameState -> 
-                { gameState with
-                    currentSubGame = gameState |> nextSubGamePosition cellPosition
-                    player = nextPlayer player }
-
-        newGameState, calculateStatus player (subGamesInProcess gameState |> List.length) (hasPlayerWon newGameState)
+        { gameState with subGames = (gameState |> updateSubGame player) :: (gameState.subGames |> getAllButPlayedSubGame) }
+        |> fun gameState -> 
+            { gameState with
+                currentSubGame = gameState |> nextSubGamePosition cellPosition
+                player = nextPlayer player }
+        |> fun gameState ->
+            gameState, calculateStatus player (gameState |> subGamesInProcess |> List.length) (gameState |> hasPlayerWon)
 
     let playerMove : PlayerMove<GameState> =
         fun subGamePosition cellPosition gameState ->

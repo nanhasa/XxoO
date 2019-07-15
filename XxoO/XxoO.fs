@@ -121,14 +121,14 @@ module App =
         |> List.mapi (fun i pos ->
             match model.gameState |> api.getSubGame pos |> fun sub -> sub.status with
             | Won player ->
-                View.BoxView(wonSubColor player model, cornerRadius = CornerRadius(10.), margin = Thickness 3.).GridRow(i / 3).GridColumn(i % 3)
+                View.BoxView(wonSubColor player model, cornerRadius = CornerRadius 10., margin = Thickness 3.).GridRow(i / 3).GridColumn(i % 3)
             | Tie ->
-                View.BoxView(Color.DarkGray, cornerRadius = CornerRadius(10.), margin = Thickness 3.).GridRow(i / 3).GridColumn(i % 3)
+                View.BoxView(Color.DarkGray, cornerRadius = CornerRadius 10., margin = Thickness 3.).GridRow(i / 3).GridColumn(i % 3)
             | InProcess ->
                 View.Grid(
                     rowdefs = ["*"; "*"; "*"], 
                     coldefs = ["*"; "*"; "*"],
-                    margin = Thickness 3.,
+                    padding = Thickness 3.0,
                     backgroundColor = (gridBackgroundColor pos model),
                     children = (gridButtons pos model dispatch)
                 ).GridRow(i / 3).GridColumn(i % 3))
