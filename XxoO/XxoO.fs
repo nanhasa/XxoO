@@ -149,7 +149,7 @@ module App =
                         children = [
                             View.TableView(
                                 items = [ "Screen", [ View.SwitchCell(
-                                                        on = false,
+                                                        on = model.nightMode,
                                                         text = "Night mode",
                                                         onChanged = (fun args -> dispatch (NightModeChanged args.Value))) ]])
                                                 
