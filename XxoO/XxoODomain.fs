@@ -133,20 +133,28 @@ module XxoOHelpers =
     let getCurrentSubGame gameState = gameState.currentSubGame
 
     let findCell (position : CellPosition) (cells : Cell list) =
-        cells |> List.find (fun c -> c.position = position)
+        cells |> List.find (cellPosition >> (=) position)
 
     let findSubGame (position : SubGamePosition) gameState =
-        gameState.subGames |> List.find (fun sub -> sub.position = position)
+        gameState.subGames |> List.find (subGamePosition >> (=) position)
 
-    //let getEmptyCellsOfSubGame subGamePosition =
-    //    getSubGame subGamePosition
-    //    >> fun sub -> sub.cells
-    //    >> List.choose (fun cell -> if isCellEmpty cell then Some cell.position else None)
+    let getEmptyCellsOfSubGame subGamePosition =
+        findSubGame subGamePosition
+        >> subGameCells
+        >> List.choose (fun cell -> if isCellEmpty cell then Some cell.position else None)
+
+    let getCellByPositions subGamePosition cellPosition =
+        findSubGame subGamePosition
+        >> subGameCells
+        >> findCell cellPosition
 
 module XxoOImplementation =
     open XxoO
     open XxoOHelpers
     open XxoOModels
+
+    let getSubGame : GetSubGame<GameState, SubGame> = findSubGame
+    let getCell : GetCell<GameState, Cell> = getCellByPositions
 
     type Line = Line of Position Set
     let line = fun (Line l) -> l
@@ -164,57 +172,33 @@ module XxoOImplementation =
           yield diagA
           yield diagB ]
 
-    let playerHasWinningLine (winningLines : Line list) (playerPositions : Position list) =
-        let playerSet = playerPositions |> Set.ofList
+    let positionsFormLine (lines : Line list) (positions : Position list) =
+        let playerSet = positions |> Set.ofList
         let cellCountOnLine = fun (Line line) -> line |> Set.intersect playerSet |> Set.count
-
-        winningLines
+        lines
         |> Seq.map cellCountOnLine // Find if winning combinations exist in player positions
         |> Seq.tryFind ((=) 3)     // Lazily find the first match
         |> Option.isSome
 
-    let hasPlayerWon = playerHasWinningLine winningLines
+    let positionsFormWinningLine = positionsFormLine winningLines
+    let hasPlayerWon gameState player = gameState |> (subGamesWonBy player >> List.map subGamePosition >> positionsFormWinningLine)
+    let hasPlayerWonSubGame subGame player = subGame |> (cellsPlayedBy player >> List.map cellPosition >> positionsFormWinningLine)
 
-    let calculateGameStatus player gameState =
-        match subGamesInProcess gameState |> List.length with
-        | unfinishedCount when unfinishedCount = 0 ->
-            Tie
+    let calculateStatus (player : Player) (unclaimedEntities : int) (hasWon : Player -> bool) =
+        match unclaimedEntities with
         | unfinishedCount when unfinishedCount >= 7 ->
             InProcess
         | _ ->
-            let playerWonSubGames = subGamesWonBy player
-            let playerWon = playerWonSubGames >> List.map subGamePosition >> hasPlayerWon
-            match gameState |> playerWon with
-            | true ->
-                Won player
-            | false ->
-                InProcess
-
-    let calculateSubGameStatus player subGame =
-        let emptyCellCount = subGame |> emptyCells |> List.length
-        match emptyCellCount with
-        | emptyCells when emptyCells >= 7 ->
-            InProcess
-        | _ ->
-            let playerWon = cellsPlayedBy player >> List.map cellPosition >> hasPlayerWon
-            match subGame |> playerWon with
-            | true ->
-                Won player
-            | false ->
-                InProcess
+            if player |> hasWon
+            then Won player
+            else InProcess
         |> function
-            | InProcess -> if emptyCellCount = 0 then Tie else InProcess
+            | InProcess -> 
+                if unclaimedEntities = 0 
+                then Tie 
+                else InProcess
             | status -> status
-
-    let getSubGame : GetSubGame<GameState, SubGame> =
-        fun subGamePosition gameState -> findSubGame subGamePosition gameState
-
-    let getCell : GetCell<GameState, Cell> =
-        fun subGamePosition cellPosition ->
-            getSubGame subGamePosition
-            >> subGameCells
-            >> findCell cellPosition
-
+            
     let isMoveValid subGamePosition cellPosition gameState =
         let subGame = gameState |> getSubGame subGamePosition
         let moveIsValidIfCellIsEmpty = subGameCells >> findCell cellPosition >> isCellEmpty
@@ -246,7 +230,7 @@ module XxoOImplementation =
         let updateSubGame player =
             findSubGame subGamePosition
             >> fun sub -> { sub with cells = playedCell :: (sub.cells |> getAllButPlayedCells) }
-            >> fun sub -> { sub with status = sub |> calculateSubGameStatus player }
+            >> fun sub -> { sub with status = calculateStatus player (sub |> emptyCells |> List.length) (hasPlayerWonSubGame sub) }
 
         let newGameState =
             { gameState with subGames = (gameState |> updateSubGame player) :: (gameState.subGames |> getAllButPlayedSubGame) }
@@ -255,7 +239,7 @@ module XxoOImplementation =
                     currentSubGame = gameState |> nextSubGamePosition cellPosition
                     player = nextPlayer player }
 
-        newGameState, newGameState |> calculateGameStatus player
+        newGameState, calculateStatus player (subGamesInProcess gameState |> List.length) (hasPlayerWon newGameState)
 
     let playerMove : PlayerMove<GameState> =
         fun subGamePosition cellPosition gameState ->
