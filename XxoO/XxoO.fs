@@ -25,7 +25,7 @@ module App =
         | IsMasterPresentedChanged of bool
         | NightModeChanged of bool
 
-    let initModel = { gameState = api.newGame; gameStatus = InProcess; isMasterPresented = false; nightMode = false }
+    let initModel = { gameState = api.newGame; gameStatus = InProcess; isMasterPresented = true; nightMode = false }
 
     let init () = initModel, Cmd.none
 
@@ -103,10 +103,10 @@ module App =
         |> List.mapi (fun i cellPos ->
             let status = cellStatus cellPos
             View.Button(
-                text = (status |> cellOwner), 
+                text = cellOwner status, 
                 fontSize = 15,
                 textColor = Color.White,
-                backgroundColor = (model |> cellColor status),
+                backgroundColor = cellColor status model,
                 padding = Thickness 0.1,
                 command = (fun _ -> dispatch (PlayerMove (subGamePos, cellPos)))
             ).GridRow(i / 3).GridColumn(i % 3))
@@ -114,7 +114,8 @@ module App =
     let gridBackgroundColor subGamePos model =
         match model.gameState.currentSubGame with
         | Some sub when sub = subGamePos -> nightModeSafeGridSelectionBackgroundColor model
-        | _ -> backgroundColor model
+        | Some _ -> backgroundColor model
+        | None -> nightModeSafeGridSelectionBackgroundColor model
 
     let subGrids model dispatch =
         cellPositions
@@ -129,8 +130,8 @@ module App =
                     rowdefs = ["*"; "*"; "*"], 
                     coldefs = ["*"; "*"; "*"],
                     padding = Thickness 3.0,
-                    backgroundColor = (gridBackgroundColor pos model),
-                    children = (gridButtons pos model dispatch)
+                    backgroundColor = gridBackgroundColor pos model,
+                    children = gridButtons pos model dispatch
                 ).GridRow(i / 3).GridColumn(i % 3))
 
     let view (model : Model) dispatch =
