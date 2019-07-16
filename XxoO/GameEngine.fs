@@ -1,9 +1,7 @@
-﻿module Domain
+﻿namespace XxoO
 
-module XxoO =
+module Domain =
 
-    type Player = PlayerX | PlayerO
-    type CellState = Played of Player | Empty
     type HorizontalPosition = Left | HCenter | Right
     type VerticalPosition = Top | VCenter | Bottom
     type Position = HorizontalPosition * VerticalPosition
@@ -26,13 +24,15 @@ module XxoO =
         let createLines f = List.map f >> List.map Set.ofList >> List.map Line
         let columns = horizontal |> createLines (fun hor -> vertical |> List.map (fun ver -> hor, ver))
         let rows = vertical |> createLines (fun ver -> horizontal |> List.map (fun hor -> hor, ver))
-        let diagA = set [ Left, Top;    HCenter, VCenter; Right, Bottom ] |> Line
-        let diagB = set [ Left, Bottom; HCenter, VCenter; Right, Top ] |> Line
+        let diagA = [ Left, Top;    HCenter, VCenter; Right, Bottom ] |> set |> Line
+        let diagB = [ Left, Bottom; HCenter, VCenter; Right, Top ] |> set |> Line
         [ yield! columns
           yield! rows
           yield diagA
           yield diagB ]
 
+    type Player = PlayerX | PlayerO
+    type CellState = Played of Player | Empty
     type GameStatus =
         | InProcess
         | Won of Player
@@ -56,16 +56,21 @@ module XxoO =
     type GetCell<'GameState, 'Cell> = SubGamePosition -> CellPosition -> 'GameState -> 'Cell
     type GetSubGame<'GameState, 'SubGame> = SubGamePosition -> 'GameState -> 'SubGame
 
-module XxoOModels =
-    open XxoO
+    // AI Helper functions
+    type GetSubGameEmptyCellPositions<'GameState> = SubGamePosition -> 'GameState -> CellPosition Set
+    type GetSubGamePlayerPlayedCellPositions<'GameState> = Player -> SubGamePosition -> 'GameState -> CellPosition Set
+    type GetAllEmptyCellPositions<'GameState> = 'GameState -> (SubGamePosition * CellPosition Set) Set
+
+module Models =
+    open Domain
 
     type Cell =
         { status : CellState
-          position : Position }
+          position : CellPosition }
 
     type SubGame =
         { status : GameStatus
-          position : Position
+          position : SubGamePosition
           cells : Cell list }
 
     type GameState = 
@@ -96,9 +101,9 @@ module XxoOModels =
         |> List.map createEmptySubGame
         |> createGameState PlayerX
 
-module XxoOHelpers =
-    open XxoO
-    open XxoOModels
+module Helpers =
+    open Domain
+    open Models
 
     let isSubGameInProcess subGame =
         match subGame.status with
@@ -151,24 +156,48 @@ module XxoOHelpers =
 
     let emptyCellsOfSubGame subGamePosition =
         subGameByPosition subGamePosition
-        >> subGameCells
-        >> List.choose (fun cell -> if isCellEmpty cell then Some cell.position else None)
+        >> fun sub -> 
+            match sub.status with
+            | InProcess -> 
+                sub
+                |> subGameCells
+                |> List.choose (fun cell -> if isCellEmpty cell then Some cell.position else None)
+                |> set
+            | _ -> Set.empty
 
     let playedCellsInSubGameBy player subGamePosition =
         subGameByPosition subGamePosition
         >> cellsPlayedBy player
+        >> List.map cellPosition
+        >> set
 
-    let allEmptyCells gameState =
-        gameState.subGames
-        |> List.map (fun sub -> sub.position, sub |> emptyCells)
+    let allEmptyCellPositions gameState =
+        let emptyCellsSet = emptyCells >> List.map cellPosition >> set
+        let currentSubGameEmptyCells subPos gameState = [ subPos, (gameState |> emptyCellsOfSubGame subPos) ] |> set
+        let allInProcessSubGameEmptyCells gameState = 
+            gameState.subGames 
+            |> List.where (fun sub -> sub.status = InProcess) 
+            |> List.map (fun sub -> sub.position, sub |> emptyCellsSet) 
+            |> set
 
-module XxoOImplementation =
-    open XxoO
-    open XxoOHelpers
-    open XxoOModels
+        match gameState.currentSubGame with
+        | Some subPos ->
+            match gameState |> subGameByPosition subPos |> subGameStatus with
+            | InProcess -> currentSubGameEmptyCells subPos gameState
+            | _ -> allInProcessSubGameEmptyCells gameState
+        | None ->
+            allInProcessSubGameEmptyCells gameState
+
+module Implementation =
+    open Domain
+    open Helpers
+    open Models
 
     let getSubGame : GetSubGame<GameState, SubGame> = subGameByPosition
     let getCell : GetCell<GameState, Cell> = cellInPosition
+    let getSubGameEmptyCellPositions : GetSubGameEmptyCellPositions<GameState> = emptyCellsOfSubGame
+    let getSubGamePlayerPlayedCellPositions : GetSubGamePlayerPlayedCellPositions<GameState> = playedCellsInSubGameBy
+    let getAllEmptyCellPositions : GetAllEmptyCellPositions<GameState> = allEmptyCellPositions
 
     let positionsFormAnyLine (lines : Line list) (positions : Position list) =
         let playerSet = positions |> Set.ofList
@@ -201,13 +230,14 @@ module XxoOImplementation =
     let isMoveValid subGamePosition cellPosition gameState =
         let subGame = gameState |> getSubGame subGamePosition
         let moveIsValidIfCellIsEmpty = subGameCellByPosition cellPosition >> isCellEmpty
+        let isInProcessSubGameWithEmptyCell sub =
+            if sub |> isSubGameInProcess
+            then sub |> moveIsValidIfCellIsEmpty
+            else false
         match gameState.currentSubGame with
-        | Some subPosition when subPosition = subGamePosition ->
-            match subGame |> subGameStatus with
-            | InProcess -> subGame |> moveIsValidIfCellIsEmpty
-            | _ -> false
+        | Some subPosition when subPosition = subGamePosition -> isInProcessSubGameWithEmptyCell subGame
         | Some _ -> false
-        | None -> subGame |> moveIsValidIfCellIsEmpty
+        | None -> isInProcessSubGameWithEmptyCell subGame
 
     let nextSubGamePosition cellPosition gameState =
         let subGame = gameState |> subGameByPosition cellPosition
@@ -253,10 +283,10 @@ module XxoOImplementation =
             | false ->
                 InvalidMove gameState
 
-module XxoOAPI =
-    open XxoO
-    open XxoOImplementation
-    open XxoOModels
+module GameAPI =
+    open Domain
+    open Implementation
+    open Models
 
     type Game = GameState
 
@@ -266,8 +296,22 @@ module XxoOAPI =
           getCell : GetCell<GameState, Cell>
           getSubGame : GetSubGame<GameState, SubGame> }
 
-    let getAPI =
+    type AIDecisionAPI =
+        { getCell : GetCell<GameState, Cell>
+          getSubGame : GetSubGame<GameState, SubGame>
+          getSubGameEmptyCellPositions : GetSubGameEmptyCellPositions<GameState>
+          getSubGamePlayerPlayedCellPositions : GetSubGamePlayerPlayedCellPositions<GameState>
+          getAllEmptyCellPositions : GetAllEmptyCellPositions<GameState> }
+
+    let gameAPI =
         { newGame = newGame
           playerMove = playerMove
           getCell = getCell
           getSubGame = getSubGame }
+
+    let aiAPI =
+        { getCell = getCell
+          getSubGame = getSubGame
+          getSubGameEmptyCellPositions = getSubGameEmptyCellPositions
+          getSubGamePlayerPlayedCellPositions = getSubGamePlayerPlayedCellPositions
+          getAllEmptyCellPositions = getAllEmptyCellPositions }

@@ -6,9 +6,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="XxoODomain.fs" />
+    <Compile Include="GameEngine.fs" />
     <Compile Include="AI.fs" />
-    <Compile Include="XxoO.fs" />
+    <Compile Include="NightMode.fs" />
+    <Compile Include="App.fs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Xamarin.Forms" Version="4.0.0.497661" />

@@ -6,96 +6,96 @@ open System.Diagnostics
 open Fabulous
 open Fabulous.XamarinForms
 open Xamarin.Forms
-open Domain.XxoO
-open Domain.XxoOAPI
+open XxoO.Domain
+open XxoO.GameAPI
+open XxoO.AI
+open XxoO.NightMode
 
 module App =
     
-    let api = getAPI
+    let api = gameAPI
+    let aiApi = aiAPI
+
+    type GameMode =
+        | SinglePlayer
+        | MultiPlayer
 
     type Model = 
-      { gameState : Game
+      { gameMode : GameMode
+        difficulty : Difficulty
+        gameState : Game
         gameStatus : GameStatus
         isMasterPresented : bool
-        nightMode : bool }
+        nightMode : bool
+        aiTurn : bool }
 
     type Msg = 
         | NewGame
+        | NewSinglePlayerGame
+        | NewDualGame
         | PlayerMove of SubGamePosition * CellPosition
         | IsMasterPresentedChanged of bool
         | NightModeChanged of bool
+        | AiMove
 
-    let initModel = { gameState = api.newGame; gameStatus = InProcess; isMasterPresented = true; nightMode = false }
+    let initModel = { gameMode = SinglePlayer; difficulty = Easy; gameState = api.newGame; gameStatus = InProcess; isMasterPresented = true; nightMode = false; aiTurn = false }
 
     let init () = initModel, Cmd.none
 
-    let playerMoved model subGamePosition cellPosition =
+    let makeMove model subGamePosition cellPosition =
         match model.gameState |> api.playerMove subGamePosition cellPosition with
-        | State gameState | InvalidMove gameState ->
-            { model with gameState = gameState; gameStatus = InProcess }, Cmd.none
+        | State gameState ->
+            Ok { model with gameState = gameState; gameStatus = InProcess }
         | GameWon (gameState, player) ->
-            { model with gameState = gameState; gameStatus = Won player }, Cmd.none
+            Ok { model with gameState = gameState; gameStatus = Won player }
         | TieGame gameState ->
-            { model with gameState = gameState; gameStatus = Tie }, Cmd.none
+            Ok { model with gameState = gameState; gameStatus = Tie }
+        | InvalidMove gameState ->
+            Error (sprintf "Invalid move: SubGamePosition %A - CellPosition %A - gameState %A" subGamePosition cellPosition gameState)
+
+    let playerMove model subGamePosition cellPosition =
+        let cmd model = 
+            match model.gameStatus with
+            | InProcess ->
+                match model.gameMode with
+                | SinglePlayer -> { model with aiTurn = true }, Cmd.ofMsg AiMove 
+                | MultiPlayer -> model, Cmd.none
+            | _ -> model, Cmd.none // Game ended
+
+        match makeMove model subGamePosition cellPosition with
+        | Ok newModel -> cmd newModel
+        | Error msg ->
+            Console.WriteLine msg
+            model, Cmd.none
+
+    let aiMove model =
+        let subGamePos, cellPos = makeAiMove model.difficulty aiApi model.gameState
+        match makeMove model subGamePos cellPos with
+        | Ok newModel -> { newModel with aiTurn = false }, Cmd.none
+        | Error msg ->
+            Console.WriteLine msg
+            model, Cmd.ofMsg AiMove
 
     let update msg model =
         match msg with
         | NewGame -> { model with gameState = api.newGame; gameStatus = InProcess; isMasterPresented = false }, Cmd.none
-        | PlayerMove (subGamePos, cellPos) -> playerMoved model subGamePos cellPos
+        | NewSinglePlayerGame -> { model with gameMode = SinglePlayer; difficulty = Easy }, Cmd.ofMsg NewGame
+        | NewDualGame -> { model with gameMode = MultiPlayer }, Cmd.ofMsg NewGame
+        | PlayerMove (subGamePos, cellPos) -> playerMove model subGamePos cellPos
+        | AiMove -> aiMove model
         | IsMasterPresentedChanged b -> { model with isMasterPresented = b }, Cmd.none
         | NightModeChanged b -> { model with nightMode = b }, Cmd.none
 
     let currentPlayer player =
         match player with
-        | PlayerX -> "Player X"
-        | PlayerO -> "Player O"
+        | PlayerX -> "X"
+        | PlayerO -> "O"
 
     let cellOwner cellStatus =
         match cellStatus with
         | Played PlayerX -> "X"
         | Played PlayerO -> "O"
         | Empty -> ""
-
-    let nightModeSafePlayerXCell model =
-        if model.nightMode
-        then Color.FromHex "3B6E67"
-        else Color.LightSkyBlue
-
-    let nightModeSafePlayerOCell model =
-        if model.nightMode
-        then Color.FromHex "873831"
-        else Color.Orange
-
-    let nightModeSafeEmptyCell model =
-        if model.nightMode
-        then Color.FromHex "DDD4E7"
-        else Color.AntiqueWhite
-
-    let cellColor cellStatus model =
-        match cellStatus with
-        | Played PlayerX -> nightModeSafePlayerXCell model
-        | Played PlayerO -> nightModeSafePlayerOCell model
-        | Empty -> nightModeSafeEmptyCell model
-
-    let wonSubColor player model =
-        match player with
-        | PlayerX -> nightModeSafePlayerXCell model
-        | PlayerO -> nightModeSafePlayerOCell model
-
-    let nightModeSafeTextColor model =
-        if model.nightMode 
-        then Color.WhiteSmoke
-        else Color.Black
-
-    let nightModeSafeGridSelectionBackgroundColor model =
-        if model.nightMode
-        then Color.ForestGreen
-        else Color.LightSeaGreen
-
-    let backgroundColor model =
-        if model.nightMode
-        then Color.FromHex "#243447"
-        else Color.White
 
     let gridButtons subGamePos model dispatch =
         let cellStatus cellPos = model.gameState |> api.getCell subGamePos cellPos |> fun cell -> cell.status
@@ -106,23 +106,24 @@ module App =
                 text = cellOwner status, 
                 fontSize = 15,
                 textColor = Color.White,
-                backgroundColor = cellColor status model,
+                backgroundColor = cellColor status model.nightMode,
                 padding = Thickness 0.1,
-                command = (fun _ -> dispatch (PlayerMove (subGamePos, cellPos)))
+                command = (fun _ -> dispatch (PlayerMove (subGamePos, cellPos))),
+                isEnabled = not model.aiTurn
             ).GridRow(i / 3).GridColumn(i % 3))
 
     let gridBackgroundColor subGamePos model =
         match model.gameState.currentSubGame with
-        | Some sub when sub = subGamePos -> nightModeSafeGridSelectionBackgroundColor model
-        | Some _ -> backgroundColor model
-        | None -> nightModeSafeGridSelectionBackgroundColor model
+        | Some sub when sub = subGamePos -> nightModeSafeGridSelectionBackgroundColor model.nightMode
+        | Some _ -> backgroundColor model.nightMode
+        | None -> nightModeSafeGridSelectionBackgroundColor model.nightMode
 
     let subGrids model dispatch =
         cellPositions
         |> List.mapi (fun i pos ->
             match model.gameState |> api.getSubGame pos |> fun sub -> sub.status with
             | Won player ->
-                View.BoxView(wonSubColor player model, cornerRadius = CornerRadius 10., margin = Thickness 3.).GridRow(i / 3).GridColumn(i % 3)
+                View.BoxView(nightModeSafePlayerColor model.nightMode player, cornerRadius = CornerRadius 10., margin = Thickness 3.).GridRow(i / 3).GridColumn(i % 3)
             | Tie ->
                 View.BoxView(Color.DarkGray, cornerRadius = CornerRadius 10., margin = Thickness 3.).GridRow(i / 3).GridColumn(i % 3)
             | InProcess ->
@@ -140,12 +141,12 @@ module App =
             masterBehavior = MasterBehavior.Popover,
             isPresented = model.isMasterPresented,
             isPresentedChanged = (fun b -> dispatch (IsMasterPresentedChanged b)),
-            backgroundColor = backgroundColor model,
+            backgroundColor = backgroundColor model.nightMode,
             master = 
                 View.ContentPage(
                     title = "Settings",
                     useSafeArea = true,
-                    backgroundColor = backgroundColor model,
+                    backgroundColor = backgroundColor model.nightMode,
                     content = View.StackLayout(
                         children = [
                             View.TableView(
@@ -155,39 +156,63 @@ module App =
                                                         onChanged = (fun args -> dispatch (NightModeChanged args.Value))) ]])
                                                 
                             View.Button(
-                                text = "New game", 
+                                text = "New single player game", 
                                 fontSize = 15,
+                                margin = Thickness 2.,
                                 textColor = Color.White,
                                 backgroundColor = Color.DarkSlateBlue,
-                                command = (fun _ -> dispatch NewGame)) ])),
+                                command = (fun _ -> dispatch NewSinglePlayerGame))
+                                
+                            View.Button(
+                                text = "New dual game", 
+                                fontSize = 15,
+                                margin = Thickness 2.,
+                                textColor = Color.White,
+                                backgroundColor = Color.DarkSlateBlue,
+                                command = (fun _ -> dispatch NewDualGame))])),
             detail = 
                 View.ContentPage(
                     title = "XxoO",
                     useSafeArea = true,
-                    backgroundColor = backgroundColor model,
+                    backgroundColor = backgroundColor model.nightMode,
                     content = View.StackLayout(
                       padding = 20.0, 
                       verticalOptions = LayoutOptions.Center,
                       children = [
                           match model.gameStatus with
                           | InProcess ->
-                              yield View.Label(
-                                  text = currentPlayer model.gameState.player,
-                                  textColor = nightModeSafeTextColor model,
-                                  margin = Thickness 3.,
-                                  verticalTextAlignment = TextAlignment.Start, 
-                                  horizontalTextAlignment = TextAlignment.Center, 
-                                  fontAttributes = FontAttributes.Bold, 
-                                  fontSize = 20)
+                              yield View.Grid(
+                                  rowdefs = ["*"],
+                                  coldefs = ["*"; "*"; "*"],
+                                  backgroundColor = backgroundColor model.nightMode,
+                                  minimumHeightRequest = 35.,
+                                  children = [
+                                    yield View.Label(
+                                        text = "Player",
+                                        textColor = nightModeSafeTextColor model.nightMode,
+                                        margin = Thickness 3.,
+                                        verticalTextAlignment = TextAlignment.Start, 
+                                        horizontalTextAlignment = TextAlignment.Start, 
+                                        fontAttributes = FontAttributes.Bold, 
+                                        fontSize = 24).GridRow(0).GridColumn(1)
+                                    yield View.Label(
+                                        text = currentPlayer model.gameState.player,
+                                        textColor = nightModeSafePlayerColor model.nightMode model.gameState.player,
+                                        margin = Thickness 3.,
+                                        verticalTextAlignment = TextAlignment.Start, 
+                                        horizontalTextAlignment = TextAlignment.End, 
+                                        fontAttributes = FontAttributes.Bold, 
+                                        fontSize = 24).GridRow(0).GridColumn(1) ])
+
                               yield View.Grid (
                                   rowdefs = ["*"; "*"; "*"], 
                                   coldefs = ["*"; "*"; "*"],
-                                  backgroundColor = backgroundColor model,
+                                  backgroundColor = backgroundColor model.nightMode,
                                   children = subGrids model dispatch)
                           | Won player ->
                               yield View.Label(
-                                  text = sprintf "%s won the game! Congratulations!!" (currentPlayer player),
-                                  textColor = nightModeSafeTextColor model,
+                                  text = sprintf "Player %s won the game! Congratulations!!" (currentPlayer player),
+                                  textColor = nightModeSafeTextColor model.nightMode,
                                   margin = Thickness 3.,
                                   verticalTextAlignment = TextAlignment.Start, 
                                   horizontalTextAlignment = TextAlignment.Center, 
@@ -202,7 +227,7 @@ module App =
                           | Tie ->
                               yield View.Label(
                                   text = "It's a tie game! Better luck next time..",
-                                  textColor = nightModeSafeTextColor model,
+                                  textColor = nightModeSafeTextColor model.nightMode,
                                   margin = Thickness 3.,
                                   verticalTextAlignment = TextAlignment.Start, 
                                   horizontalTextAlignment = TextAlignment.Center, 
