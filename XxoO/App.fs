@@ -8,13 +8,13 @@ open Fabulous.XamarinForms
 open Xamarin.Forms
 open XxoO.Domain
 open XxoO.GameAPI
-open XxoO.AI
+open XxoO.AI.Api
 open XxoO.NightMode
 
 module App =
     
-    let api = gameAPI
-    let aiApi = aiAPI
+    let api = gameplayAPI
+    let informationApi = informationAPI
 
     type GameMode =
         | SinglePlayer
@@ -69,7 +69,7 @@ module App =
             model, Cmd.none
 
     let aiMove model =
-        let subGamePos, cellPos = makeAiMove model.difficulty aiApi model.gameState
+        let subGamePos, cellPos = makeAiMove model.difficulty informationApi model.gameState
         match makeMove model subGamePos cellPos with
         | Ok newModel -> { newModel with aiTurn = false }, Cmd.none
         | Error msg ->

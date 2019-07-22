@@ -18,19 +18,6 @@ module Domain =
           HCenter, Bottom
           Right, Bottom ]
 
-    let winningLines : Line list =
-        let horizontal = [ Left; HCenter; Right ]
-        let vertical = [ Top; VCenter; Bottom ]
-        let createLines f = List.map f >> List.map Set.ofList >> List.map Line
-        let columns = horizontal |> createLines (fun hor -> vertical |> List.map (fun ver -> hor, ver))
-        let rows = vertical |> createLines (fun ver -> horizontal |> List.map (fun hor -> hor, ver))
-        let diagA = [ Left, Top;    HCenter, VCenter; Right, Bottom ] |> set |> Line
-        let diagB = [ Left, Bottom; HCenter, VCenter; Right, Top ] |> set |> Line
-        [ yield! columns
-          yield! rows
-          yield diagA
-          yield diagB ]
-
     type Player = PlayerX | PlayerO
     type CellState = Played of Player | Empty
     type GameStatus =
@@ -57,9 +44,11 @@ module Domain =
     type GetSubGame<'GameState, 'SubGame> = SubGamePosition -> 'GameState -> 'SubGame
 
     // AI Helper functions
-    type GetSubGameEmptyCellPositions<'GameState> = SubGamePosition -> 'GameState -> CellPosition Set
-    type GetSubGamePlayerPlayedCellPositions<'GameState> = Player -> SubGamePosition -> 'GameState -> CellPosition Set
-    type GetAllEmptyCellPositions<'GameState> = 'GameState -> (SubGamePosition * CellPosition Set) Set
+    type GetAllInProcessPlayerPlayedCellPositions<'GameState> = Player -> 'GameState -> (SubGamePosition * CellPosition Set) Set
+    type GetPlayableEmptyCellPositions<'GameState> = 'GameState -> (SubGamePosition * CellPosition Set) Set
+    type GetSubGamePositionsWonByPlayer<'GameState> = Player -> 'GameState -> SubGamePosition Set
+    type GetTieSubGamePositions<'GameState> = 'GameState -> SubGamePosition Set
+    type GetPositionsMissingFromWinningLines = Position Set -> Position Set -> Position Set Set
 
 module Models =
     open Domain
@@ -110,6 +99,11 @@ module Helpers =
         | InProcess -> true
         | _ -> false
 
+    let isSubGameTie subGame =
+        match subGame.status with
+        | Tie -> true
+        | _ -> false
+
     let isSubGameFinished subGame =
         subGame |> isSubGameInProcess |> not
 
@@ -144,6 +138,12 @@ module Helpers =
     let subGameCells (subGame : SubGame) = subGame.cells
     let cellPosition (cell : Cell) = cell.position
 
+    let tieSubGamePositions gameState =
+        gameState.subGames |> List.where isSubGameTie |> List.map subGamePosition |> set
+
+    let subGamePositionsWonBy player gameState =
+        subGamesWonBy player gameState |> List.map subGamePosition |> set
+
     let subGameCellByPosition (position : CellPosition) subGame =
         subGame.cells |> List.find (cellPosition >> (=) position)
 
@@ -154,90 +154,82 @@ module Helpers =
         subGameByPosition subGamePosition
         >> subGameCellByPosition cellPosition
 
-    let emptyCellsOfSubGame subGamePosition =
+    let subGameEmptyCellPositions subGamePosition =
         subGameByPosition subGamePosition
         >> fun sub -> 
-            match sub.status with
-            | InProcess -> 
-                sub
-                |> subGameCells
-                |> List.choose (fun cell -> if isCellEmpty cell then Some cell.position else None)
-                |> set
-            | _ -> Set.empty
+            if isSubGameInProcess sub
+            then sub |> emptyCells |> List.map cellPosition
+            else List.Empty
 
-    let playedCellsInSubGameBy player subGamePosition =
-        subGameByPosition subGamePosition
-        >> cellsPlayedBy player
-        >> List.map cellPosition
-        >> set
+    let playerCellsSet player = cellsPlayedBy player >> List.map cellPosition >> set
 
-    let allEmptyCellPositions gameState =
+    let playerPlayedCellPositions player gameState =
+        gameState.subGames
+        |> List.where isSubGameInProcess
+        |> List.map (fun sub -> sub.position, sub |> playerCellsSet player)
+        |> List.where (snd >> Set.count >> (<) 0)
+        |> set
+
+    let allInProcessEmptyCellPositions gameState = 
         let emptyCellsSet = emptyCells >> List.map cellPosition >> set
-        let currentSubGameEmptyCells subPos gameState = [ subPos, (gameState |> emptyCellsOfSubGame subPos) ] |> set
-        let allInProcessSubGameEmptyCells gameState = 
-            gameState.subGames 
-            |> List.where (fun sub -> sub.status = InProcess) 
-            |> List.map (fun sub -> sub.position, sub |> emptyCellsSet) 
-            |> set
+        gameState.subGames 
+        |> List.where isSubGameInProcess 
+        |> List.map (fun sub -> sub.position, sub |> emptyCellsSet) 
+        |> set
+
+    let playableEmptyCellPositions gameState =
+        let currentSubGameEmptyCells subPos gameState = 
+            [ subPos, (gameState |> subGameEmptyCellPositions subPos |> set) ] |> set
 
         match gameState.currentSubGame with
         | Some subPos ->
-            match gameState |> subGameByPosition subPos |> subGameStatus with
-            | InProcess -> currentSubGameEmptyCells subPos gameState
-            | _ -> allInProcessSubGameEmptyCells gameState
+            if gameState |> subGameByPosition subPos |> isSubGameInProcess
+            then currentSubGameEmptyCells subPos gameState
+            else allInProcessEmptyCellPositions gameState
         | None ->
-            allInProcessSubGameEmptyCells gameState
+            allInProcessEmptyCellPositions gameState
 
-module Implementation =
-    open Domain
-    open Helpers
-    open Models
+    let winningLines : Line list =
+        let horizontal = [ Left; HCenter; Right ]
+        let vertical = [ Top; VCenter; Bottom ]
+        let createLines f = List.map f >> List.map Set.ofList >> List.map Line
+        let columns = horizontal |> createLines (fun hor -> vertical |> List.map (fun ver -> hor, ver))
+        let rows = vertical |> createLines (fun ver -> horizontal |> List.map (fun hor -> hor, ver))
+        let diagA = [ Left, Top;    HCenter, VCenter; Right, Bottom ] |> set |> Line
+        let diagB = [ Left, Bottom; HCenter, VCenter; Right, Top ] |> set |> Line
+        [ yield! columns
+          yield! rows
+          yield diagA
+          yield diagB ]
 
-    let getSubGame : GetSubGame<GameState, SubGame> = subGameByPosition
-    let getCell : GetCell<GameState, Cell> = cellInPosition
-    let getSubGameEmptyCellPositions : GetSubGameEmptyCellPositions<GameState> = emptyCellsOfSubGame
-    let getSubGamePlayerPlayedCellPositions : GetSubGamePlayerPlayedCellPositions<GameState> = playedCellsInSubGameBy
-    let getAllEmptyCellPositions : GetAllEmptyCellPositions<GameState> = allEmptyCellPositions
+    let positionFormLine (positions : Position Set) =
+        fun (Line line) ->
+            line |> Set.intersect positions |> Set.count |> (=) 3
+
+    let positionsMissingFromLine (positions : Position Set) =
+        fun (Line line) ->
+            Set.difference line positions
+
+    let allPositionsAreEmpty emptyPositions positions =
+        let positionCount = Set.count positions
+        let intersectCount = Set.intersect positions emptyPositions |> Set.count
+        positionCount = intersectCount
+
+    let positionsMissingFromAchievableLines (lines : Line list) (emptyPositions : Position Set) (positions : Position Set) =
+        lines 
+        |> List.map (positionsMissingFromLine positions)
+        |> List.where (allPositionsAreEmpty emptyPositions)
+        |> set
 
     let positionsFormAnyLine (lines : Line list) (positions : Position list) =
         let playerSet = positions |> Set.ofList
-        let cellCountOnLine = fun (Line line) -> line |> Set.intersect playerSet |> Set.count
         let findFirstFullLine = 
-            Seq.map cellCountOnLine // Find if all positions in a line exist in player positions
-            >> Seq.tryFind ((=) 3)  // Lazily find the first match
+            Seq.map (positionFormLine playerSet)
+            >> Seq.tryFind id
             >> Option.isSome
         lines |> findFirstFullLine
 
     let positionsFormWinningLine = positionsFormAnyLine winningLines
-    let hasPlayerWon gameState player = gameState |> (subGamesWonBy player >> List.map subGamePosition >> positionsFormWinningLine)
-    let hasPlayerWonSubGame subGame player = subGame |> (cellsPlayedBy player >> List.map cellPosition >> positionsFormWinningLine)
-
-    let calculateStatus (player : Player) (unclaimedEntities : int) (hasWon : Player -> bool) =
-        match unclaimedEntities with
-        | count when count >= 7 ->
-            InProcess
-        | _ ->
-            if player |> hasWon
-            then Won player
-            else InProcess
-        |> function
-            | InProcess -> 
-                if unclaimedEntities = 0 
-                then Tie 
-                else InProcess
-            | status -> status
-            
-    let isMoveValid subGamePosition cellPosition gameState =
-        let subGame = gameState |> getSubGame subGamePosition
-        let moveIsValidIfCellIsEmpty = subGameCellByPosition cellPosition >> isCellEmpty
-        let isInProcessSubGameWithEmptyCell sub =
-            if sub |> isSubGameInProcess
-            then sub |> moveIsValidIfCellIsEmpty
-            else false
-        match gameState.currentSubGame with
-        | Some subPosition when subPosition = subGamePosition -> isInProcessSubGameWithEmptyCell subGame
-        | Some _ -> false
-        | None -> isInProcessSubGameWithEmptyCell subGame
 
     let nextSubGamePosition cellPosition gameState =
         let subGame = gameState |> subGameByPosition cellPosition
@@ -250,7 +242,40 @@ module Implementation =
         | PlayerX -> PlayerO
         | PlayerO -> PlayerX
 
-    let makeMove subGamePosition cellPosition gameState =
+    let hasPlayerWon gameState player = gameState |> (subGamesWonBy player >> List.map subGamePosition >> positionsFormWinningLine)
+    let hasPlayerWonSubGame subGame player = subGame |> (cellsPlayedBy player >> List.map cellPosition >> positionsFormWinningLine)
+
+module Implementation =
+    open Domain
+    open Helpers
+    open Models
+
+    let calculateStatus (player : Player) (unclaimedEntities : int) (hasWon : Player -> bool) =
+        match unclaimedEntities with
+        | count when count >= 7 ->
+            InProcess
+        | count when count > 0 ->
+            if player |> hasWon
+            then Won player
+            else InProcess
+        | _ ->
+            if player |> hasWon
+            then Won player
+            else Tie
+            
+    let isMoveValid subGamePosition cellPosition gameState =
+        let subGame = gameState |> subGameByPosition subGamePosition
+        let moveIsValidIfCellIsEmpty = subGameCellByPosition cellPosition >> isCellEmpty
+        let isInProcessSubGameWithEmptyCell sub =
+            if sub |> isSubGameInProcess
+            then sub |> moveIsValidIfCellIsEmpty
+            else false
+        match gameState.currentSubGame with
+        | Some subPosition when subPosition = subGamePosition -> isInProcessSubGameWithEmptyCell subGame
+        | Some _ -> false
+        | None -> isInProcessSubGameWithEmptyCell subGame
+
+    let createNewState subGamePosition cellPosition gameState =
         let player = gameState.player
         let playedCell = { status = Played player; position = cellPosition }
         let getAllButPlayedCells = List.where (fun (cell : Cell) -> cell.position <> cellPosition)
@@ -269,11 +294,11 @@ module Implementation =
         |> fun gameState ->
             gameState, calculateStatus player (gameState |> subGamesInProcess |> List.length) (gameState |> hasPlayerWon)
 
-    let playerMove : PlayerMove<GameState> =
+    let makeMove : PlayerMove<GameState> =
         fun subGamePosition cellPosition gameState ->
             match gameState |> isMoveValid subGamePosition cellPosition with
             | true ->
-                match gameState |> makeMove subGamePosition cellPosition with
+                match gameState |> createNewState subGamePosition cellPosition with
                 | newGameState, InProcess ->
                     State newGameState
                 | newGameState, Won player ->
@@ -287,6 +312,7 @@ module GameAPI =
     open Domain
     open Implementation
     open Models
+    open Helpers
 
     type Game = GameState
 
@@ -296,22 +322,22 @@ module GameAPI =
           getCell : GetCell<GameState, Cell>
           getSubGame : GetSubGame<GameState, SubGame> }
 
-    type AIDecisionAPI =
-        { getCell : GetCell<GameState, Cell>
-          getSubGame : GetSubGame<GameState, SubGame>
-          getSubGameEmptyCellPositions : GetSubGameEmptyCellPositions<GameState>
-          getSubGamePlayerPlayedCellPositions : GetSubGamePlayerPlayedCellPositions<GameState>
-          getAllEmptyCellPositions : GetAllEmptyCellPositions<GameState> }
+    type GameStateInformationAPI =
+        { getAllInProcessPlayerPlayedCellPositions : GetAllInProcessPlayerPlayedCellPositions<GameState>
+          getPlayableEmptyCellPositions : GetPlayableEmptyCellPositions<GameState>
+          getSubGamePositionsWonByPlayer : GetSubGamePositionsWonByPlayer<GameState>
+          getTieSubGamePositions : GetTieSubGamePositions<GameState>
+          getPositionsMissingFromWinningLines : GetPositionsMissingFromWinningLines }
 
-    let gameAPI =
+    let gameplayAPI =
         { newGame = newGame
-          playerMove = playerMove
-          getCell = getCell
-          getSubGame = getSubGame }
+          playerMove = makeMove
+          getCell = cellInPosition
+          getSubGame = subGameByPosition }
 
-    let aiAPI =
-        { getCell = getCell
-          getSubGame = getSubGame
-          getSubGameEmptyCellPositions = getSubGameEmptyCellPositions
-          getSubGamePlayerPlayedCellPositions = getSubGamePlayerPlayedCellPositions
-          getAllEmptyCellPositions = getAllEmptyCellPositions }
+    let informationAPI =
+        { getAllInProcessPlayerPlayedCellPositions = playerPlayedCellPositions
+          getPlayableEmptyCellPositions = playableEmptyCellPositions
+          getSubGamePositionsWonByPlayer = subGamePositionsWonBy
+          getTieSubGamePositions = tieSubGamePositions
+          getPositionsMissingFromWinningLines = positionsMissingFromAchievableLines winningLines }
