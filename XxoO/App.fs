@@ -13,8 +13,8 @@ open XxoO.NightMode
 
 module App =
     
+    let infoApi = GameInfoAPI.infoApi
     let api = gameplayAPI
-    let informationApi = informationAPI
 
     type GameMode =
         | SinglePlayer
@@ -69,7 +69,7 @@ module App =
             model, Cmd.none
 
     let aiMove model =
-        let subGamePos, cellPos = makeAiMove model.difficulty informationApi model.gameState
+        let subGamePos, cellPos = makeAiMove model.difficulty (model.gameState |> infoApi.getGameInfo)
         match makeMove model subGamePos cellPos with
         | Ok newModel -> { newModel with aiTurn = false }, Cmd.none
         | Error msg ->
