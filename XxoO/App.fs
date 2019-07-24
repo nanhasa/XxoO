@@ -31,14 +31,14 @@ module App =
 
     type Msg = 
         | NewGame
-        | NewSinglePlayerGame
+        | NewSinglePlayerGame of Difficulty
         | NewDualGame
         | PlayerMove of SubGamePosition * CellPosition
         | IsMasterPresentedChanged of bool
         | NightModeChanged of bool
         | AiMove
 
-    let initModel = { gameMode = SinglePlayer; difficulty = Easy; gameState = api.newGame; gameStatus = InProcess; isMasterPresented = true; nightMode = false; aiTurn = false }
+    let initModel = { gameMode = SinglePlayer; difficulty = Normal; gameState = api.newGame; gameStatus = InProcess; isMasterPresented = true; nightMode = false; aiTurn = false }
 
     let init () = initModel, Cmd.none
 
@@ -79,7 +79,7 @@ module App =
     let update msg model =
         match msg with
         | NewGame -> { model with gameState = api.newGame; gameStatus = InProcess; isMasterPresented = false }, Cmd.none
-        | NewSinglePlayerGame -> { model with gameMode = SinglePlayer; difficulty = Easy }, Cmd.ofMsg NewGame
+        | NewSinglePlayerGame difficulty -> { model with gameMode = SinglePlayer; difficulty = difficulty }, Cmd.ofMsg NewGame
         | NewDualGame -> { model with gameMode = MultiPlayer }, Cmd.ofMsg NewGame
         | PlayerMove (subGamePos, cellPos) -> playerMove model subGamePos cellPos
         | AiMove -> aiMove model
@@ -149,6 +149,42 @@ module App =
                     backgroundColor = backgroundColor model.nightMode,
                     content = View.StackLayout(
                         children = [
+                            View.Label(
+                                text = "Rules",
+                                margin = Thickness 6.,
+                                textColor = nightModeSafeTextColor model.nightMode,
+                                verticalTextAlignment = TextAlignment.Start, 
+                                horizontalTextAlignment = TextAlignment.Start, 
+                                fontAttributes = FontAttributes.Bold, 
+                                fontSize = 20)
+
+                            View.Label(
+                                text = sprintf "The game consists of 3x3 grid (A) with another 3x3 grid (B) inside of each of cell in grid A.",
+                                textColor = nightModeSafeTextColor model.nightMode,
+                                margin = Thickness 6.,
+                                verticalTextAlignment = TextAlignment.Start, 
+                                horizontalTextAlignment = TextAlignment.Start, 
+                                fontAttributes = FontAttributes.Bold, 
+                                fontSize = 13)
+
+                            View.Label(
+                                text = "To win the game, player must form a line of three owned cells in grid A. To own grid A cell, player must form a line of three cells in the grid B of that cell in grid A. However, player can only input their mark in grid B which position on grid A matches the position of cell played by previous player in grid B. If the next grid B is already owned, player can choose where ever to put their mark.",
+                                textColor = nightModeSafeTextColor model.nightMode,
+                                margin = Thickness 6.,
+                                verticalTextAlignment = TextAlignment.Start, 
+                                horizontalTextAlignment = TextAlignment.Start, 
+                                fontAttributes = FontAttributes.Bold, 
+                                fontSize = 13)
+
+                            View.Label(
+                                text = "Don't worry if this is confusing, the game will highlight next valid B grid(s) with green for you.",
+                                textColor = nightModeSafeTextColor model.nightMode,
+                                margin = Thickness 6.,
+                                verticalTextAlignment = TextAlignment.Start, 
+                                horizontalTextAlignment = TextAlignment.Start, 
+                                fontAttributes = FontAttributes.Bold, 
+                                fontSize = 13)
+
                             View.TableView(
                                 items = [ "Screen", [ View.SwitchCell(
                                                         on = model.nightMode,
@@ -156,15 +192,23 @@ module App =
                                                         onChanged = (fun args -> dispatch (NightModeChanged args.Value))) ]])
                                                 
                             View.Button(
-                                text = "New single player game", 
+                                text = "New game vs easy AI", 
                                 fontSize = 15,
                                 margin = Thickness 2.,
                                 textColor = Color.White,
                                 backgroundColor = Color.DarkSlateBlue,
-                                command = (fun _ -> dispatch NewSinglePlayerGame))
+                                command = (fun _ -> dispatch (NewSinglePlayerGame Easy)))
                                 
                             View.Button(
-                                text = "New dual game", 
+                                text = "New game vs AI", 
+                                fontSize = 15,
+                                margin = Thickness 2.,
+                                textColor = Color.White,
+                                backgroundColor = Color.DarkSlateBlue,
+                                command = (fun _ -> dispatch (NewSinglePlayerGame Normal)))
+
+                            View.Button(
+                                text = "New game vs human", 
                                 fontSize = 15,
                                 margin = Thickness 2.,
                                 textColor = Color.White,

@@ -195,24 +195,22 @@ module Api =
         | Normal
 
     let makeAiMove difficulty (game : Game) : SubGamePosition * CellPosition =
+        let fullCellFilter = filterAllUnwantedCells game
+        let leanientFilter = getCellsThatWontLetOpponentWinGameNextTurn game
+        let chooseWinningCell = chooseFromWinningCells game fullCellFilter leanientFilter
+        let chooseFromMultipleWinningSubGames = tryChooseFromMultipleWinningPositions game
         match difficulty with
         | Easy ->
-            let aiPlayer, opponent = players game
-            
-            let decision =
-                let fullCellFilter = filterAllUnwantedCells game
-                let leanientFilter = getCellsThatWontLetOpponentWinGameNextTurn game
-                let chooseWinningCell = chooseFromWinningCells game fullCellFilter leanientFilter
-                let chooseFromMultipleWinningSubGames = tryChooseFromMultipleWinningPositions game
-
-                tryWinSubGame chooseWinningCell chooseFromMultipleWinningSubGames game
-                >>= tryBlockOtherPlayerFromWinningSubGame chooseWinningCell chooseFromMultipleWinningSubGames
-                >>= tryAddSecondPositionOnCellLine fullCellFilter
-                >>= tryChooseAnyPositionWithFilter fullCellFilter
-                >>= chooseRandomPosition
-            
-            match decision with
+            tryWinSubGame chooseWinningCell chooseFromMultipleWinningSubGames game
+            >>= tryBlockOtherPlayerFromWinningSubGame chooseWinningCell chooseFromMultipleWinningSubGames
+            >>= tryAddSecondPositionOnCellLine fullCellFilter
+            >>= chooseRandomPosition
+        | Normal -> 
+            tryWinSubGame chooseWinningCell chooseFromMultipleWinningSubGames game
+            >>= tryBlockOtherPlayerFromWinningSubGame chooseWinningCell chooseFromMultipleWinningSubGames
+            >>= tryAddSecondPositionOnCellLine fullCellFilter
+            >>= tryChooseAnyPositionWithFilter fullCellFilter
+            >>= chooseRandomPosition
+        |> function
             | DecisionMade (sub, cell) -> sub, cell
             | UnableToMakeDecision game -> failwithf "Unable to make decision with game: %A" game
-        | Normal -> 
-            (Left, Top), (Left, Top) // Placeholder
