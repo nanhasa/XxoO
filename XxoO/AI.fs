@@ -180,7 +180,7 @@ module Decisions =
             
     let chooseRandomPosition (game : Game) =
         match game.playableCells with
-        | [] -> failwithf "There are no playable cells to choose from game: %A" game
+        | [] -> UnableToMakeDecision game
         | positions -> 
             match tryGetRandomPosition positions with
             | Some pos -> makeDecision pos
@@ -194,7 +194,7 @@ module Api =
         | Easy
         | Normal
 
-    let makeAiMove difficulty (game : Game) : SubGamePosition * CellPosition =
+    let makeAiMove difficulty (game : Game) =
         let fullCellFilter = filterAllUnwantedCells game
         let leanientFilter = getCellsThatWontLetOpponentWinGameNextTurn game
         let chooseWinningCell = chooseFromWinningCells game fullCellFilter leanientFilter
@@ -212,5 +212,5 @@ module Api =
             >>= tryChooseAnyPositionWithFilter fullCellFilter
             >>= chooseRandomPosition
         |> function
-            | DecisionMade (sub, cell) -> sub, cell
-            | UnableToMakeDecision game -> failwithf "Unable to make decision with game: %A" game
+            | DecisionMade (sub, cell) -> Ok (sub, cell)
+            | UnableToMakeDecision game -> Error (sprintf "Unable to make decision with game: %A" game)

@@ -27,7 +27,7 @@ module App =
         gameStatus : GameStatus
         isMasterPresented : bool
         nightMode : bool
-        aiTurn : bool }
+        aiMoveErrors : int }
 
     type Msg = 
         | NewGame
@@ -38,7 +38,7 @@ module App =
         | NightModeChanged of bool
         | AiMove
 
-    let initModel = { gameMode = SinglePlayer; difficulty = Normal; gameState = api.newGame; gameStatus = InProcess; isMasterPresented = true; nightMode = false; aiTurn = false }
+    let initModel = { gameMode = SinglePlayer; difficulty = Normal; gameState = api.newGame; gameStatus = InProcess; isMasterPresented = true; nightMode = false; aiMoveErrors = 0 }
 
     let init () = initModel, Cmd.none
 
@@ -54,27 +54,33 @@ module App =
             Error (sprintf "Invalid move: SubGamePosition %A - CellPosition %A - gameState %A" subGamePosition cellPosition gameState)
 
     let playerMove model subGamePosition cellPosition =
-        let cmd model = 
+        let nextCmd model = 
             match model.gameStatus with
             | InProcess ->
                 match model.gameMode with
-                | SinglePlayer -> { model with aiTurn = true }, Cmd.ofMsg AiMove 
-                | MultiPlayer -> model, Cmd.none
-            | _ -> model, Cmd.none // Game ended
+                | SinglePlayer -> Cmd.ofMsg AiMove 
+                | MultiPlayer -> Cmd.none
+            | _ -> Cmd.none // Game ended
 
         match makeMove model subGamePosition cellPosition with
-        | Ok newModel -> cmd newModel
+        | Ok newModel -> newModel, nextCmd newModel
         | Error msg ->
             Console.WriteLine msg
             model, Cmd.none
 
     let aiMove model =
-        let subGamePos, cellPos = makeAiMove model.difficulty (model.gameState |> infoApi.getGameInfo)
-        match makeMove model subGamePos cellPos with
-        | Ok newModel -> { newModel with aiTurn = false }, Cmd.none
-        | Error msg ->
-            Console.WriteLine msg
-            model, Cmd.ofMsg AiMove
+        if model.aiMoveErrors > 5 
+        then failwithf "Ai unable to make a move with model %A" model
+        else 
+            let moveResult = 
+                makeAiMove model.difficulty (model.gameState |> infoApi.getGameInfo) 
+                |> Result.bind (fun (subPos, cellPos) -> makeMove model subPos cellPos)
+
+            match moveResult with
+            | Ok newModel -> { newModel with aiMoveErrors = 0 }, Cmd.none
+            | Error msg ->
+                Console.WriteLine msg
+                { model with aiMoveErrors = model.aiMoveErrors + 1 }, Cmd.ofMsg AiMove
 
     let update msg model =
         match msg with
@@ -97,6 +103,14 @@ module App =
         | Played PlayerO -> "O"
         | Empty -> ""
 
+    let aiTurn model =
+        match model.gameMode with
+        | SinglePlayer ->
+            match model.gameState.player with
+            | PlayerX -> false
+            | PlayerO -> true
+        | MultiPlayer -> false
+
     let gridButtons subGamePos model dispatch =
         let cellStatus cellPos = model.gameState |> api.getCell subGamePos cellPos |> fun cell -> cell.status
         cellPositions
@@ -109,7 +123,7 @@ module App =
                 backgroundColor = cellColor status model.nightMode,
                 padding = Thickness 0.1,
                 command = (fun _ -> dispatch (PlayerMove (subGamePos, cellPos))),
-                isEnabled = not model.aiTurn
+                isEnabled = (aiTurn model |> not)
             ).GridRow(i / 3).GridColumn(i % 3))
 
     let gridBackgroundColor subGamePos model =
