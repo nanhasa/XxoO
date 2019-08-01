@@ -72,14 +72,19 @@ module App =
         if model.aiMoveErrors > 5 
         then failwithf "Ai unable to make a move with model %A" model
         else 
-            let moveResult = 
-                makeAiMove model.difficulty (model.gameState |> infoApi.getGameInfo) 
-                |> Result.bind (fun (subPos, cellPos) -> makeMove model subPos cellPos)
+            try
+                let moveResult = 
+                    makeAiMove model.difficulty (model.gameState |> infoApi.getGameInfo) 
+                    |> Result.bind (fun (subPos, cellPos) -> makeMove model subPos cellPos)
 
-            match moveResult with
-            | Ok newModel -> { newModel with aiMoveErrors = 0 }, Cmd.none
-            | Error msg ->
-                Console.WriteLine msg
+                match moveResult with
+                | Ok newModel -> { newModel with aiMoveErrors = 0 }, Cmd.none
+                | Error msg ->
+                    Console.WriteLine msg
+                    { model with aiMoveErrors = model.aiMoveErrors + 1 }, Cmd.ofMsg AiMove
+            with
+            | ex -> 
+                Console.WriteLine ex.Message
                 { model with aiMoveErrors = model.aiMoveErrors + 1 }, Cmd.ofMsg AiMove
 
     let update msg model =
