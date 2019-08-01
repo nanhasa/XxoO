@@ -27,7 +27,8 @@ module App =
         gameStatus : GameStatus
         isMasterPresented : bool
         nightMode : bool
-        aiMoveErrors : int }
+        aiMoveErrors : int
+        aiErrorMsg : string}
 
     type Msg = 
         | NewGame
@@ -38,9 +39,17 @@ module App =
         | NightModeChanged of bool
         | AiMove
 
-    let initModel = { gameMode = SinglePlayer; difficulty = Normal; gameState = api.newGame; gameStatus = InProcess; isMasterPresented = true; nightMode = false; aiMoveErrors = 0 }
+    let initModel = { gameMode = SinglePlayer; difficulty = Normal; gameState = api.newGame; gameStatus = InProcess; isMasterPresented = true; nightMode = false; aiMoveErrors = 0; aiErrorMsg = "" }
 
     let init () = initModel, Cmd.none
+
+    let aiTurn model =
+        match model.gameMode with
+        | SinglePlayer ->
+            match model.gameState.player with
+            | PlayerX -> false
+            | PlayerO -> true
+        | MultiPlayer -> false
 
     let makeMove model subGamePosition cellPosition =
         match model.gameState |> api.playerMove subGamePosition cellPosition with
@@ -66,11 +75,11 @@ module App =
         | Ok newModel -> newModel, nextCmd newModel
         | Error msg ->
             Console.WriteLine msg
-            model, Cmd.none
+            model, if aiTurn model then Cmd.ofMsg AiMove else Cmd.none 
 
     let aiMove model =
-        if model.aiMoveErrors > 5 
-        then failwithf "Ai unable to make a move with model %A" model
+        if model.aiMoveErrors > 20 
+        then { model with aiErrorMsg = "Something unexpected happened, please start a new game" }, Cmd.none
         else 
             try
                 let moveResult = 
@@ -89,7 +98,7 @@ module App =
 
     let update msg model =
         match msg with
-        | NewGame -> { model with gameState = api.newGame; gameStatus = InProcess; isMasterPresented = false }, Cmd.none
+        | NewGame -> { model with gameState = api.newGame; gameStatus = InProcess; isMasterPresented = false; aiMoveErrors = 0; aiErrorMsg = "" }, Cmd.none
         | NewSinglePlayerGame difficulty -> { model with gameMode = SinglePlayer; difficulty = difficulty }, Cmd.ofMsg NewGame
         | NewDualGame -> { model with gameMode = MultiPlayer }, Cmd.ofMsg NewGame
         | PlayerMove (subGamePos, cellPos) -> playerMove model subGamePos cellPos
@@ -108,21 +117,13 @@ module App =
         | Played PlayerO -> "O"
         | Empty -> ""
 
-    let aiTurn model =
-        match model.gameMode with
-        | SinglePlayer ->
-            match model.gameState.player with
-            | PlayerX -> false
-            | PlayerO -> true
-        | MultiPlayer -> false
-
     let gridButtons subGamePos model dispatch =
         let cellStatus cellPos = model.gameState |> api.getCell subGamePos cellPos |> fun cell -> cell.status
         cellPositions
         |> List.mapi (fun i cellPos ->
             let status = cellStatus cellPos
             View.Button(
-                text = cellOwner status, 
+                //text = cellOwner status, This bugs every now and then for some reason
                 fontSize = 15,
                 textColor = Color.White,
                 backgroundColor = cellColor status model.nightMode,
@@ -246,32 +247,43 @@ module App =
                           | InProcess ->
                               yield View.Grid(
                                   rowdefs = ["*"],
-                                  coldefs = ["*"; "*"; "*"],
+                                  coldefs = ["*"; "*"; "*"; "*"; "*"; "*"; "*"],
                                   backgroundColor = backgroundColor model.nightMode,
                                   minimumHeightRequest = 35.,
                                   children = [
                                     yield View.Label(
                                         text = "Player",
                                         textColor = nightModeSafeTextColor model.nightMode,
-                                        margin = Thickness 3.,
-                                        verticalTextAlignment = TextAlignment.Start, 
-                                        horizontalTextAlignment = TextAlignment.Start, 
+                                        margin = Thickness 4.,
+                                        verticalTextAlignment = TextAlignment.Center, 
+                                        horizontalTextAlignment = TextAlignment.End, 
                                         fontAttributes = FontAttributes.Bold, 
-                                        fontSize = 24).GridRow(0).GridColumn(1)
+                                        fontSize = 38).GridRow(0).GridColumn(0).GridColumnSpan(4)
                                     yield View.Label(
                                         text = currentPlayer model.gameState.player,
                                         textColor = nightModeSafePlayerColor model.nightMode model.gameState.player,
-                                        margin = Thickness 3.,
-                                        verticalTextAlignment = TextAlignment.Start, 
+                                        margin = Thickness 4.,
+                                        verticalTextAlignment = TextAlignment.Center, 
                                         horizontalTextAlignment = TextAlignment.End, 
                                         fontAttributes = FontAttributes.Bold, 
-                                        fontSize = 24).GridRow(0).GridColumn(1) ])
+                                        fontSize = 38).GridRow(0).GridColumn(4) ])
 
                               yield View.Grid (
                                   rowdefs = ["*"; "*"; "*"], 
                                   coldefs = ["*"; "*"; "*"],
                                   backgroundColor = backgroundColor model.nightMode,
                                   children = subGrids model dispatch)
+                              
+                              // Present error message if AI derped
+                              if String.IsNullOrEmpty model.aiErrorMsg
+                              then yield View.Label(
+                                      text = model.aiErrorMsg,
+                                      textColor = nightModeSafeTextColor model.nightMode,
+                                      margin = Thickness 6.,
+                                      verticalTextAlignment = TextAlignment.Center, 
+                                      horizontalTextAlignment = TextAlignment.Center, 
+                                      fontAttributes = FontAttributes.Bold, 
+                                      fontSize = 28)
                           | Won player ->
                               yield View.Label(
                                   text = sprintf "Player %s won the game! Congratulations!!" (currentPlayer player),

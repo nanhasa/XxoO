@@ -293,8 +293,8 @@ module InfoDomain =
 
     let playerLineInfo winningLines playerPositions emptyPositions =
         winningLines 
-        |> List.map (fun line -> line, positionsMissingFromLine playerPositions line)
-        |> List.map (fun (positions, missingPositions) ->
+        |> List.map (fun line -> 
+            let missingPositions = positionsMissingFromLine playerPositions line
             let missingPositionsCount = Set.count missingPositions
             let achievableMissingPositionsCount = Set.intersect missingPositions emptyPositions |> Set.count
             let status =
@@ -304,7 +304,7 @@ module InfoDomain =
                     if missingPositionsCount = achievableMissingPositionsCount
                     then AchievableWith pos
                     else Unachievable
-            { positions = positions; lineStatus = status })
+            { positions = line; lineStatus = status })
 
     type SubGameInfo =
         { position : SubGamePosition

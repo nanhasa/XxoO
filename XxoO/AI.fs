@@ -36,11 +36,6 @@ module Helpers =
             tryMakeDecision game (Some sub) tryCell
         | None -> unableToMakeDecision game
 
-    let foldDecisions game decisions =
-        match decisions |> List.tryPick (function | DecisionMade (sub, cell) -> Some (sub, cell) | UnableToMakeDecision _ -> None) with
-        | Some (sub, cell) -> makeDecision (sub, cell)
-        | None -> unableToMakeDecision game
-
     let (>>=) x f = bindDecision f x
 
     let players (game : Game) =
@@ -66,11 +61,9 @@ module Helpers =
         |> List.tryFind ((=) sub)
         |> Option.isSome
 
-    let positionsOnCellLinesMissingN (n : int) (player : Player) (game : Game) =
-        game.playableSubGamePositions
-        |> List.map (
-            game.subGameByPosition 
-            >> fun sub -> sub.position, sub.positionsMissingFromAchievableLines player |> List.where (List.length >> (=) n) |> List.concat)
+    let positionsOnCellLinesMissingN (n : int) (player : Player) (getSub : SubGamePosition -> Sub) (playableSubs : SubGamePosition list) =
+        playableSubs
+        |> List.map (getSub >> fun sub -> sub.position, sub.positionsMissingFromAchievableLines player |> List.where (List.length >> (=) n) |> List.concat)
         |> List.where (snd >> List.isEmpty >> not)
 
 module Filters =
@@ -100,27 +93,21 @@ module Filters =
 
     let filterCellsThatWouldLetOpponentWinGameNextTurn game =
         let _, opponent = players game
-        List.where (winningSubGameWouldWinGame game opponent)
+        List.where (winningSubGameWouldWinGame game opponent >> not)
 
 module Decisions =
     open Helpers
     open Filters
 
-    let tryDecideFromWinningCells game strictCellFilter leanientCellFilter sub cellsToWinSubGame =
+    let tryDecideFromWinningCells game cellFilter sub cellsToWinSubGame =
         match winningSubGameWouldWinGame game game.player sub with
         | true ->
-            tryMakeDecision game (Some sub) (cellsToWinSubGame |> List.tryHead)
+            tryMakeDecision game (Some sub) (cellsToWinSubGame |> List.tryHead) // Game is won with any cell
         | false ->
-            let winningSubProgressesLine = 
-                game.positionsMissingFromAchievableLines game.player
-                |> List.where (List.length >> (=) 2)
-                |> List.concat
-                |> List.contains sub
-
-            let decide = List.tryHead >> tryMakeDecision game (Some sub)
-            if winningSubProgressesLine
-            then leanientCellFilter cellsToWinSubGame |> decide
-            else strictCellFilter cellsToWinSubGame |> decide
+            cellsToWinSubGame
+            |> cellFilter 
+            |> List.tryHead 
+            |> tryMakeDecision game (Some sub)
 
     let tryFindSubGameToWinGame (game : Game) (player : Player) (positionsToWinSubGame : (SubGamePosition * CellPosition list) list) =
         positionsToWinSubGame 
@@ -131,25 +118,49 @@ module Decisions =
     let tryChooseSubGameToWinGame (positionsToWinSubGame : (SubGamePosition * CellPosition list) list) (game : Game) =
         tryFindSubGameToWinGame game game.player positionsToWinSubGame
 
-    let tryChooseSubGameToWinToPreventOpponentWinningGame (positionsToWinSubGame : (SubGamePosition * CellPosition list) list) (game : Game) =
+    let tryChooseSubGameToWinToPreventOpponentWinGame (positionsToWinSubGame : (SubGamePosition * CellPosition list) list) (game : Game) =
         let _, opponent = players game
         tryFindSubGameToWinGame game opponent positionsToWinSubGame
 
     let tryChooseFromWinningPositions (positionsToWinSubGame : (SubGamePosition * CellPosition list) list) (game : Game) =
-        positionsToWinSubGame
-        |> List.map (fun (sub, cells) -> 
-            let newSubGameLineCellFilter = filterAllUnwantedCells game
-            let progressSubGameLineCellFilter = filterCellsThatWouldLetOpponentWinGameNextTurn game
-            tryDecideFromWinningCells game newSubGameLineCellFilter progressSubGameLineCellFilter sub cells)
-        |> foldDecisions game   
+        let ai, opponent = players game
+        let getPositionsToProgressLineOf player = game.positionsMissingFromAchievableLines player |> List.where (List.length >> (=) 2) |> List.concat
+        let positionsToProgressAiLine = getPositionsToProgressLineOf ai
+        let positionsToProgressOpponentLine = getPositionsToProgressLineOf opponent
+        let subsAbleToWin = positionsToWinSubGame |> List.map fst
+        let leanientCellFilter = filterCellsThatWouldLetOpponentWinGameNextTurn game
+
+        let decide game =
+            List.map (fun (sub, cells) -> tryDecideFromWinningCells game leanientCellFilter sub cells)
+            >> List.tryPick (function | DecisionMade (sub, cell) -> Some (sub, cell) | UnableToMakeDecision _ -> None)
+            >> tryMakeDecisionFromTuple game
+
+        let tryPickSubGameThatProgressesAiSubGameLineAndBlocksOpponentLine game =
+            Set.intersect (positionsToProgressAiLine |> set) (subsAbleToWin |> set)
+            |> Set.intersect (positionsToProgressOpponentLine |> set)
+            |> Set.toList
+            |> List.map (fun sub -> positionsToWinSubGame |> List.find (fst >> (=) sub))
+            |> decide game
+
+        let tryPickSubGameThatProgressesAiSubGameLine game =
+            Set.intersect (positionsToProgressAiLine |> set) (subsAbleToWin |> set)
+            |> Set.toList
+            |> List.map (fun sub -> positionsToWinSubGame |> List.find (fst >> (=) sub))
+            |> decide game
+
+        let tryPickFromAll game = positionsToWinSubGame |> decide game
+            
+        tryPickSubGameThatProgressesAiSubGameLineAndBlocksOpponentLine game
+        >>= tryPickSubGameThatProgressesAiSubGameLine
+        >>= tryPickFromAll
 
     let tryMakeDecisionFromMultipleWinningPositions (game : Game) (positionsToWinSubGame : (SubGamePosition * CellPosition list) list) =
         tryChooseSubGameToWinGame positionsToWinSubGame game
-        >>= tryChooseSubGameToWinToPreventOpponentWinningGame positionsToWinSubGame
+        >>= tryChooseSubGameToWinToPreventOpponentWinGame positionsToWinSubGame
         >>= tryChooseFromWinningPositions positionsToWinSubGame
 
     let tryGetThirdPositionOnLineInSubGame (player : Player) decideCellWithinOneSubGame decideSubGameAndCellFromMultipleSubGames (game : Game) =
-        let positionsToWinSubGame = positionsOnCellLinesMissingN 1 player game
+        let positionsToWinSubGame = positionsOnCellLinesMissingN 1 player game.subGameByPosition game.playableSubGamePositions
         match positionsToWinSubGame with
         | [] -> unableToMakeDecision game
         | [ sub, cells ] -> decideCellWithinOneSubGame sub cells
@@ -163,7 +174,7 @@ module Decisions =
         tryGetThirdPositionOnLineInSubGame opponent decideCellWithinOneSubGame decideSubGameAndCellFromMultipleSubGames game
 
     let tryAddSecondPositionOnCellLine filterCells (game : Game) =
-        positionsOnCellLinesMissingN 2 game.player game
+        positionsOnCellLinesMissingN 2 game.player game.subGameByPosition game.playableSubGamePositions
         |> List.map (fun (sub, cells) -> sub, cells |> filterCells)
         |> List.tryFind (snd >> List.isEmpty >> not)
         |> tryMakeDecisionFromFirstPosition game
@@ -192,7 +203,7 @@ module Api =
     let makeAiMove difficulty (game : Game) =
         let strictCellFilter = filterAllUnwantedCells game
         let leanientFilter = filterCellsThatWouldLetOpponentWinGameNextTurn game
-        let chooseWinningCell = tryDecideFromWinningCells game strictCellFilter leanientFilter
+        let chooseWinningCell = tryDecideFromWinningCells game leanientFilter
         let chooseFromMultipleWinningSubGames = tryMakeDecisionFromMultipleWinningPositions game
 
         match difficulty with
