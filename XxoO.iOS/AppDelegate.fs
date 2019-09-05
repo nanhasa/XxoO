@@ -1,7 +1,6 @@
 ﻿// Copyright 2018 Fabulous contributors. See LICENSE.md for license.
 namespace XxoO.iOS
 
-open System
 open UIKit
 open Foundation
 open Xamarin.Forms
@@ -13,7 +12,7 @@ type AppDelegate () =
 
     override this.FinishedLaunching (app, options) =
         Forms.Init()
-        let appcore = new XxoO.App()
+        let appcore = new XxoODomain.App()
         this.LoadApplication (appcore)
         base.FinishedLaunching(app, options)
 

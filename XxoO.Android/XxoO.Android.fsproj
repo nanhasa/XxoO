@@ -9,7 +9,7 @@
     <ProjectGuid>{CA4EC946-AD64-4A70-B16B-EFACFE440695}</ProjectGuid>
     <OutputType>Library</OutputType>
     <RootNamespace>XxoO.Android</RootNamespace>
-    <AssemblyName>XxoO.Android</AssemblyName>
+    <AssemblyName>XxoO</AssemblyName>
     <TargetFrameworkVersion>v9.0</TargetFrameworkVersion>
     <TemplateGuid>{c9e5eea5-ca05-42a1-839b-61506e0a37df}</TemplateGuid>
     <AndroidApplication>True</AndroidApplication>
@@ -27,7 +27,7 @@
     <RestorePackages>true</RestorePackages>
     <OtherFlags>/warnon:1182</OtherFlags>
     <WarningLevel>4</WarningLevel>
-    <SelectedDevice>slim</SelectedDevice>
+    <SelectedDevice>Samsung SM-G970F</SelectedDevice>
     <DefaultDevice>slim</DefaultDevice>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
@@ -315,9 +315,12 @@
     <Reference Include="Fabulous.XamarinForms.LiveUpdate">
       <HintPath>..\packages\Fabulous.XamarinForms.LiveUpdate.0.40.4\lib\netstandard2.0\Fabulous.XamarinForms.LiveUpdate.dll</HintPath>
     </Reference>
-    <ProjectReference Include="..\XxoO\XxoO.fsproj">
-      <Project>{10E16640-B142-4D54-826E-163090D771E5}</Project>
-      <Name>XxoO</Name>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\XxoODomain\XxoODomain.fsproj">
+      <Name>XxoODomain</Name>
+      <Project>{adc3628d-367d-4e5d-8dc3-1d8055f93df4}</Project>
+      <Private>True</Private>
     </ProjectReference>
   </ItemGroup>
 </Project>

@@ -189,9 +189,12 @@
     <Reference Include="Fabulous.XamarinForms.LiveUpdate">
       <HintPath>..\packages\Fabulous.XamarinForms.LiveUpdate.0.40.4\lib\netstandard2.0\Fabulous.XamarinForms.LiveUpdate.dll</HintPath>
     </Reference>
-    <ProjectReference Include="..\XxoO\XxoO.fsproj">
-      <Project>{10E16640-B142-4D54-826E-163090D771E5}</Project>
-      <Name>XxoO</Name>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\XxoODomain\XxoODomain.fsproj">
+      <Name>XxoODomain</Name>
+      <Project>{adc3628d-367d-4e5d-8dc3-1d8055f93df4}</Project>
+      <Private>True</Private>
     </ProjectReference>
   </ItemGroup>
 </Project>

@@ -3,14 +3,18 @@
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
     <EnableDefaultEmbeddedResourceItems>false</EnableDefaultEmbeddedResourceItems>
+    <AssemblyName>XxoODomain</AssemblyName>
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="Rules.fs" />
     <Compile Include="GameEngine.fs" />
     <Compile Include="AI.fs" />
     <Compile Include="NightMode.fs" />
     <Compile Include="App.fs" />
   </ItemGroup>
+  
+  <ItemGroup />
   <ItemGroup>
     <PackageReference Include="Xamarin.Forms" Version="4.0.0.497661" />
     <PackageReference Include="Xamarin.Essentials" Version="1.1.0" />

@@ -1,4 +1,4 @@
-﻿namespace XxoO
+﻿namespace XxoODomain
 
 module Domain =
 

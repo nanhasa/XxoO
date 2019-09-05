@@ -3,8 +3,8 @@ module Tests
 open System
 open Xunit
 
-open XxoO.Domain
-open XxoO.Helpers
+open XxoODomain.Domain
+open XxoODomain.Helpers
 
 [<Fact>]
 let ``All winning lines should pass winning line check`` () =

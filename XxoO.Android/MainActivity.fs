@@ -4,15 +4,12 @@ namespace XxoO.Android
 open System
 
 open Android.App
-open Android.Content
 open Android.Content.PM
 open Android.Runtime
-open Android.Views
-open Android.Widget
 open Android.OS
 open Xamarin.Forms.Platform.Android
 
-[<Activity (Label = "XxoO.Android", Icon = "@mipmap/icon", Theme = "@style/MainTheme", MainLauncher = true, ConfigurationChanges = (ConfigChanges.ScreenSize ||| ConfigChanges.Orientation))>]
+[<Activity (Label = "XxoO", Icon = "@mipmap/icon", Theme = "@style/MainTheme", MainLauncher = true, ConfigurationChanges = (ConfigChanges.ScreenSize ||| ConfigChanges.Orientation))>]
 type MainActivity() =
     inherit FormsAppCompatActivity()
     override this.OnCreate (bundle: Bundle) =
@@ -24,7 +21,7 @@ type MainActivity() =
 
         Xamarin.Forms.Forms.Init (this, bundle)
 
-        let appcore  = new XxoO.App()
+        let appcore  = new XxoODomain.App()
         this.LoadApplication (appcore)
 
     override this.OnRequestPermissionsResult(requestCode: int, permissions: string[], [<GeneratedEnum>] grantResults: Android.Content.PM.Permission[]) =

@@ -1,7 +1,7 @@
-﻿module XxoO.NightMode
+﻿module XxoODomain.NightMode
 
 open Xamarin.Forms
-open XxoO.Domain
+open XxoODomain.Domain
 
 let nightModeSafePlayerXCell nightMode =
     if nightMode

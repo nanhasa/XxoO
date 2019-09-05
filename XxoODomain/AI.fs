@@ -1,8 +1,8 @@
-﻿module XxoO.AI
+﻿module XxoODomain.AI
 
 open System
-open XxoO.Domain
-open XxoO.GameInfoAPI
+open XxoODomain.Domain
+open XxoODomain.GameInfoAPI
 
 module Helpers =
 
