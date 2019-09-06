@@ -2,7 +2,6 @@
 namespace XxoO.Android
 
 open System
-
 open Android.App
 open Android.Content.PM
 open Android.Runtime

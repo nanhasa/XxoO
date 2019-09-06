@@ -177,8 +177,17 @@ module App =
                         fontAttributes = FontAttributes.Bold, 
                         fontSize = 38).GridRow(0).GridColumn(4) ])
 
+    let isButtonEnabled model subGamePos =
+        if aiTurn model 
+        then false
+        else
+            model.gameState.currentSubGame 
+            |> Option.map (fun subPos -> subPos = subGamePos) 
+            |> Option.defaultValue true
+
     let gridButtons subGamePos model dispatch =
         let cellStatus cellPos = model.gameState |> api.getCell subGamePos cellPos |> fun cell -> cell.status
+        let isEnabled = isButtonEnabled model subGamePos
         cellPositions
         |> List.mapi (fun i cellPos ->
             let status = cellStatus cellPos
@@ -189,7 +198,8 @@ module App =
                 backgroundColor = cellColor status model.nightMode,
                 padding = Thickness 0.1,
                 command = (fun _ -> dispatch (PlayerMove (subGamePos, cellPos))),
-                isEnabled = (aiTurn model |> not)
+                isEnabled = isEnabled,
+                canExecute = isEnabled
             ).GridRow(i / 3).GridColumn(i % 3))
 
     let gridBackgroundColor subGamePos model =
