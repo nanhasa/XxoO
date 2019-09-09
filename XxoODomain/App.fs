@@ -40,6 +40,7 @@ module App =
         | NightModeChanged of bool
         | AiMove
         | AcceptedEULA
+        | ToolbarClicked
 
     let initModel = { gameMode = SinglePlayer; difficulty = Normal; gameState = api.newGame; gameStatus = InProcess; isMasterPresented = true; nightMode = false; aiMoveErrors = 0; aiErrorMsg = ""; acceptedEULA = false }
 
@@ -110,6 +111,7 @@ module App =
         | IsMasterPresentedChanged b -> { model with isMasterPresented = b }, Cmd.none
         | NightModeChanged b -> { model with nightMode = b }, Cmd.none
         | AcceptedEULA -> { model with acceptedEULA = true }, Cmd.none
+        | ToolbarClicked -> { model with isMasterPresented = model.isMasterPresented |> not }, Cmd.none
 
     let currentPlayer player =
         match player with
@@ -213,9 +215,9 @@ module App =
         |> List.mapi (fun i pos ->
             match model.gameState |> api.getSubGame pos |> fun sub -> sub.status with
             | Won player ->
-                View.BoxView(nightModeSafePlayerColor model.nightMode player, cornerRadius = CornerRadius 10., margin = Thickness 3.).GridRow(i / 3).GridColumn(i % 3)
+                View.BoxView((nightModeSafePlayerColor model.nightMode player), cornerRadius = CornerRadius 10., margin = Thickness 3.)
             | Tie ->
-                View.BoxView(Color.DarkGray, cornerRadius = CornerRadius 10., margin = Thickness 3.).GridRow(i / 3).GridColumn(i % 3)
+                View.BoxView(Color.DarkGray, cornerRadius = CornerRadius 10., margin = Thickness 3.)
             | InProcess ->
                 View.Grid(
                     rowdefs = ["*"; "*"; "*"], 
@@ -223,7 +225,8 @@ module App =
                     padding = Thickness 3.0,
                     backgroundColor = gridBackgroundColor pos model,
                     children = gridButtons pos model dispatch
-                ).GridRow(i / 3).GridColumn(i % 3))
+                )
+            |> fun view -> view.GridRow(i / 3).GridColumn(i % 3))
 
     let view (model : Model) dispatch =
         if model.acceptedEULA |> not then
@@ -260,125 +263,130 @@ module App =
                             backgroundColor = Color.DarkSlateBlue,
                             command = (fun _ -> dispatch AcceptedEULA)) ]))
         else
-            View.MasterDetailPage(
-                useSafeArea = true,
-                masterBehavior = MasterBehavior.Popover,
-                isPresented = model.isMasterPresented,
-                isPresentedChanged = (fun b -> dispatch (IsMasterPresentedChanged b)),
-                backgroundColor = backgroundColor model.nightMode,
-                master = 
-                    View.ContentPage(
-                        title = "Settings",
+            View.NavigationPage(
+                barBackgroundColor = (backgroundColor model.nightMode), 
+                barTextColor = Color.Orange,
+                pages = [
+                    View.MasterDetailPage(
                         useSafeArea = true,
+                        masterBehavior = MasterBehavior.Popover,
+                        isPresented = model.isMasterPresented,
+                        isPresentedChanged = (fun b -> dispatch (IsMasterPresentedChanged b)),
                         backgroundColor = backgroundColor model.nightMode,
-                        content = View.StackLayout(
-                            children = [
-                                View.Label(
-                                    text = "Rules",
-                                    margin = Thickness 6.,
-                                    textColor = nightModeSafeTextColor model.nightMode,
-                                    verticalTextAlignment = TextAlignment.Start, 
-                                    horizontalTextAlignment = TextAlignment.Start, 
-                                    fontAttributes = FontAttributes.Bold, 
-                                    fontSize = 20)
+                        master = 
+                            View.ContentPage(
+                                title = "Settings",
+                                useSafeArea = true,
+                                backgroundColor = backgroundColor model.nightMode,
+                                content = View.StackLayout(
+                                    children = [
+                                        View.Label(
+                                            text = "Rules",
+                                            margin = Thickness 6.,
+                                            textColor = nightModeSafeTextColor model.nightMode,
+                                            verticalTextAlignment = TextAlignment.Start, 
+                                            horizontalTextAlignment = TextAlignment.Start, 
+                                            fontAttributes = FontAttributes.Bold, 
+                                            fontSize = 20)
 
-                                View.Label(
-                                    text = Rules.rules,
-                                    textColor = nightModeSafeTextColor model.nightMode,
-                                    margin = Thickness 6.,
-                                    verticalTextAlignment = TextAlignment.Start, 
-                                    horizontalTextAlignment = TextAlignment.Start, 
-                                    fontAttributes = FontAttributes.Bold, 
-                                    fontSize = 13)
+                                        View.Label(
+                                            text = Rules.rules,
+                                            textColor = nightModeSafeTextColor model.nightMode,
+                                            margin = Thickness 6.,
+                                            verticalTextAlignment = TextAlignment.Start, 
+                                            horizontalTextAlignment = TextAlignment.Start, 
+                                            fontAttributes = FontAttributes.Bold, 
+                                            fontSize = 13)
 
-                                View.TableView(
-                                    items = [ "Screen", [ View.SwitchCell(
-                                                            on = model.nightMode,
-                                                            text = "Night mode",
-                                                            onChanged = (fun args -> dispatch (NightModeChanged args.Value))) ]])
+                                        View.TableView(
+                                            items = [ "Screen", [ View.SwitchCell(
+                                                                    on = model.nightMode,
+                                                                    text = "Night mode",
+                                                                    onChanged = (fun args -> dispatch (NightModeChanged args.Value))) ]])
                                                 
-                                View.Button(
-                                    text = "New game vs easy AI", 
-                                    fontSize = 15,
-                                    margin = Thickness 2.,
-                                    textColor = Color.White,
-                                    backgroundColor = Color.DarkSlateBlue,
-                                    command = (fun _ -> dispatch (NewSinglePlayerGame Easy)))
+                                        View.Button(
+                                            text = "New game vs easy AI", 
+                                            fontSize = 15,
+                                            margin = Thickness 2.,
+                                            textColor = Color.White,
+                                            backgroundColor = Color.DarkSlateBlue,
+                                            command = (fun _ -> dispatch (NewSinglePlayerGame Easy)))
                                 
-                                View.Button(
-                                    text = "New game vs AI", 
-                                    fontSize = 15,
-                                    margin = Thickness 2.,
-                                    textColor = Color.White,
-                                    backgroundColor = Color.DarkSlateBlue,
-                                    command = (fun _ -> dispatch (NewSinglePlayerGame Normal)))
+                                        View.Button(
+                                            text = "New game vs AI", 
+                                            fontSize = 15,
+                                            margin = Thickness 2.,
+                                            textColor = Color.White,
+                                            backgroundColor = Color.DarkSlateBlue,
+                                            command = (fun _ -> dispatch (NewSinglePlayerGame Normal)))
 
-                                View.Button(
-                                    text = "New game vs human", 
-                                    fontSize = 15,
-                                    margin = Thickness 2.,
-                                    textColor = Color.White,
-                                    backgroundColor = Color.DarkSlateBlue,
-                                    command = (fun _ -> dispatch NewDualGame))])),
-                detail = 
-                    View.ContentPage(
-                        title = "XxoO",
-                        useSafeArea = true,
-                        backgroundColor = backgroundColor model.nightMode,
-                        content = View.StackLayout(
-                          padding = 20.0, 
-                          verticalOptions = LayoutOptions.Center,
-                          children = [
-                              match model.gameStatus with
-                              | InProcess ->
-                                  yield playerTurnLabel model
+                                        View.Button(
+                                            text = "New game vs human", 
+                                            fontSize = 15,
+                                            margin = Thickness 2.,
+                                            textColor = Color.White,
+                                            backgroundColor = Color.DarkSlateBlue,
+                                            command = (fun _ -> dispatch NewDualGame))])),
+                        detail = 
+                            View.ContentPage(
+                                title = "XxoO",
+                                useSafeArea = true,
+                                backgroundColor = backgroundColor model.nightMode,
+                                content = View.StackLayout(
+                                  padding = 20.0, 
+                                  verticalOptions = LayoutOptions.Center,
+                                  children = [
+                                      match model.gameStatus with
+                                      | InProcess ->
+                                          yield playerTurnLabel model
 
-                                  yield View.Grid (
-                                      rowdefs = ["*"; "*"; "*"], 
-                                      coldefs = ["*"; "*"; "*"],
-                                      backgroundColor = backgroundColor model.nightMode,
-                                      children = subGrids model dispatch)
+                                          yield View.Grid (
+                                              rowdefs = ["*"; "*"; "*"], 
+                                              coldefs = ["*"; "*"; "*"],
+                                              backgroundColor = backgroundColor model.nightMode,
+                                              children = subGrids model dispatch)
                               
-                                  // Present error message if AI derped
-                                  if String.IsNullOrEmpty model.aiErrorMsg
-                                  then yield View.Label(
-                                          text = model.aiErrorMsg,
-                                          textColor = nightModeSafeTextColor model.nightMode,
-                                          margin = Thickness 6.,
-                                          verticalTextAlignment = TextAlignment.Center, 
-                                          horizontalTextAlignment = TextAlignment.Center, 
-                                          fontAttributes = FontAttributes.Bold, 
-                                          fontSize = 28)
-                              | Won player ->
-                                  yield View.Label(
-                                      text = winningText model.gameMode player,
-                                      textColor = nightModeSafeTextColor model.nightMode,
-                                      margin = Thickness 3.,
-                                      verticalTextAlignment = TextAlignment.Start, 
-                                      horizontalTextAlignment = TextAlignment.Center, 
-                                      fontAttributes = FontAttributes.Bold, 
-                                      fontSize = 30)
-                                  yield View.Button(
-                                      text = "Play again",
-                                      fontSize = 11,
-                                      textColor = Color.White, 
-                                      backgroundColor = Color.DarkSlateBlue, 
-                                      command = (fun _ -> dispatch NewGame))
-                              | Tie ->
-                                  yield View.Label(
-                                      text = "It's a tie game! Better luck next time!",
-                                      textColor = nightModeSafeTextColor model.nightMode,
-                                      margin = Thickness 3.,
-                                      verticalTextAlignment = TextAlignment.Start, 
-                                      horizontalTextAlignment = TextAlignment.Center, 
-                                      fontAttributes = FontAttributes.Bold, 
-                                      fontSize = 30)
-                                  yield View.Button(
-                                      text = "Play again",
-                                      fontSize = 11,
-                                      textColor = Color.White, 
-                                      backgroundColor = Color.DarkSlateBlue, 
-                                      command = (fun _ -> dispatch NewGame)) ])))
+                                          // Present error message if AI derped
+                                          if String.IsNullOrEmpty model.aiErrorMsg
+                                          then yield View.Label(
+                                                  text = model.aiErrorMsg,
+                                                  textColor = nightModeSafeTextColor model.nightMode,
+                                                  margin = Thickness 6.,
+                                                  verticalTextAlignment = TextAlignment.Center, 
+                                                  horizontalTextAlignment = TextAlignment.Center, 
+                                                  fontAttributes = FontAttributes.Bold, 
+                                                  fontSize = 28)
+                                      | Won player ->
+                                          yield View.Label(
+                                              text = winningText model.gameMode player,
+                                              textColor = nightModeSafeTextColor model.nightMode,
+                                              margin = Thickness 3.,
+                                              verticalTextAlignment = TextAlignment.Start, 
+                                              horizontalTextAlignment = TextAlignment.Center, 
+                                              fontAttributes = FontAttributes.Bold, 
+                                              fontSize = 30)
+                                          yield View.Button(
+                                              text = "Play again",
+                                              fontSize = 11,
+                                              textColor = Color.White, 
+                                              backgroundColor = Color.DarkSlateBlue, 
+                                              command = (fun _ -> dispatch NewGame))
+                                      | Tie ->
+                                          yield View.Label(
+                                              text = "It's a tie game! Better luck next time!",
+                                              textColor = nightModeSafeTextColor model.nightMode,
+                                              margin = Thickness 3.,
+                                              verticalTextAlignment = TextAlignment.Start, 
+                                              horizontalTextAlignment = TextAlignment.Center, 
+                                              fontAttributes = FontAttributes.Bold, 
+                                              fontSize = 30)
+                                          yield View.Button(
+                                              text = "Play again",
+                                              fontSize = 11,
+                                              textColor = Color.White, 
+                                              backgroundColor = Color.DarkSlateBlue, 
+                                              command = (fun _ -> dispatch NewGame)) ]))) ])
+                    .ToolbarItems([View.ToolbarItem(text="about", command=(fun () -> dispatch ToolbarClicked))] )
         
     // Note, this declaration is needed if you enable LiveUpdate
     let program = Program.mkProgram init update view
