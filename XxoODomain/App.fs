@@ -25,24 +25,26 @@ module App =
         difficulty : Difficulty
         gameState : Game
         gameStatus : GameStatus
+        moveIsProcessing : bool
         isMasterPresented : bool
         nightMode : bool
         aiMoveErrors : int
         aiErrorMsg : string
         acceptedEULA : bool }
 
+    let initModel = { gameMode = SinglePlayer; difficulty = Normal; gameState = api.newGame; gameStatus = InProcess; moveIsProcessing = false; isMasterPresented = true; nightMode = false; aiMoveErrors = 0; aiErrorMsg = ""; acceptedEULA = false }
+
     type Msg = 
         | NewGame
         | NewSinglePlayerGame of Difficulty
         | NewDualGame
         | PlayerMove of SubGamePosition * CellPosition
+        | GridButtonPressed of SubGamePosition * CellPosition
         | IsMasterPresentedChanged of bool
         | NightModeChanged of bool
         | AiMove
         | AcceptedEULA
         | ToolbarClicked
-
-    let initModel = { gameMode = SinglePlayer; difficulty = Normal; gameState = api.newGame; gameStatus = InProcess; isMasterPresented = true; nightMode = false; aiMoveErrors = 0; aiErrorMsg = ""; acceptedEULA = false }
 
     let init () = initModel, Cmd.none
 
@@ -75,10 +77,10 @@ module App =
             | _ -> Cmd.none // Game ended
 
         match makeMove model subGamePosition cellPosition with
-        | Ok newModel -> newModel, nextCmd newModel
+        | Ok newModel -> { newModel with moveIsProcessing = false }, nextCmd newModel
         | Error msg ->
             Console.WriteLine msg
-            model, if aiTurn model then Cmd.ofMsg AiMove else Cmd.none 
+            { model with moveIsProcessing = false }, if aiTurn model then Cmd.ofMsg AiMove else Cmd.none 
 
     let aiMove model =
         if model.aiMoveErrors > 20 
@@ -101,12 +103,18 @@ module App =
                 Console.WriteLine ex.Message
                 { model with aiMoveErrors = model.aiMoveErrors + 1 }, Cmd.ofMsg AiMove
 
+    let buttonPress model pos =
+        if model.moveIsProcessing
+        then model, Cmd.none
+        else { model with moveIsProcessing = true }, Cmd.ofMsg (PlayerMove pos)
+
     let update msg model =
         match msg with
         | NewGame -> { model with gameState = api.newGame; gameStatus = InProcess; isMasterPresented = false; aiMoveErrors = 0; aiErrorMsg = "" }, Cmd.none
         | NewSinglePlayerGame difficulty -> { model with gameMode = SinglePlayer; difficulty = difficulty }, Cmd.ofMsg NewGame
         | NewDualGame -> { model with gameMode = MultiPlayer }, Cmd.ofMsg NewGame
         | PlayerMove (subGamePos, cellPos) -> playerMove model subGamePos cellPos
+        | GridButtonPressed (subGamePos, cellPos) -> buttonPress model (subGamePos, cellPos)
         | AiMove -> aiMove model
         | IsMasterPresentedChanged b -> { model with isMasterPresented = b }, Cmd.none
         | NightModeChanged b -> { model with nightMode = b }, Cmd.none
@@ -141,7 +149,6 @@ module App =
                 View.Label(
                     text = "Your turn",
                     textColor = nightModeSafeTextColor model.nightMode,
-                    margin = Thickness 4.,
                     verticalTextAlignment = TextAlignment.Center, 
                     horizontalTextAlignment = TextAlignment.Center, 
                     fontAttributes = FontAttributes.Bold, 
@@ -150,7 +157,6 @@ module App =
                 View.Label(
                     text = "AI turn",
                     textColor = nightModeSafeTextColor model.nightMode,
-                    margin = Thickness 4.,
                     verticalTextAlignment = TextAlignment.Center, 
                     horizontalTextAlignment = TextAlignment.Center, 
                     fontAttributes = FontAttributes.Bold, 
@@ -165,7 +171,6 @@ module App =
                     yield View.Label(
                         text = "Player",
                         textColor = nightModeSafeTextColor model.nightMode,
-                        margin = Thickness 4.,
                         verticalTextAlignment = TextAlignment.Center, 
                         horizontalTextAlignment = TextAlignment.End, 
                         fontAttributes = FontAttributes.Bold, 
@@ -173,7 +178,6 @@ module App =
                     yield View.Label(
                         text = currentPlayer model.gameState.player,
                         textColor = nightModeSafePlayerColor model.nightMode model.gameState.player,
-                        margin = Thickness 4.,
                         verticalTextAlignment = TextAlignment.Center, 
                         horizontalTextAlignment = TextAlignment.End, 
                         fontAttributes = FontAttributes.Bold, 
@@ -192,17 +196,19 @@ module App =
         let isEnabled = isButtonEnabled model subGamePos
         cellPositions
         |> List.mapi (fun i cellPos ->
-            let status = cellStatus cellPos
-            View.Button(
-                //text = cellOwner status, This bugs every now and then for some reason
-                fontSize = 15,
-                textColor = Color.White,
-                backgroundColor = cellColor status model.nightMode,
-                padding = Thickness 0.1,
-                command = (fun _ -> dispatch (PlayerMove (subGamePos, cellPos))),
-                isEnabled = isEnabled,
-                canExecute = isEnabled
-            ).GridRow(i / 3).GridColumn(i % 3))
+            match cellStatus cellPos with
+            | Played player ->
+                View.BoxView(color = nightModeSafePlayerColor model.nightMode player, cornerRadius = CornerRadius 3., margin = Thickness 0.1)
+            | _ ->
+                View.Button(
+                    fontSize = 15,
+                    textColor = Color.White,
+                    backgroundColor = nightModeSafeEmptyCell model.nightMode,
+                    padding = Thickness 0.1,
+                    command = (fun _ -> dispatch (PlayerMove (subGamePos, cellPos))),
+                    isEnabled = isEnabled,
+                    canExecute = isEnabled)
+            |> fun b -> b.GridRow(i / 3).GridColumn(i % 3))
 
     let gridBackgroundColor subGamePos model =
         match model.gameState.currentSubGame with
@@ -224,8 +230,7 @@ module App =
                     coldefs = ["*"; "*"; "*"],
                     padding = Thickness 3.0,
                     backgroundColor = gridBackgroundColor pos model,
-                    children = gridButtons pos model dispatch
-                )
+                    children = gridButtons pos model dispatch)
             |> fun view -> view.GridRow(i / 3).GridColumn(i % 3))
 
     let view (model : Model) dispatch =
@@ -264,8 +269,7 @@ module App =
                             command = (fun _ -> dispatch AcceptedEULA)) ]))
         else
             View.NavigationPage(
-                barBackgroundColor = (backgroundColor model.nightMode), 
-                barTextColor = Color.Orange,
+                barBackgroundColor = Color.FromHex "#455b75", // Color primary dark
                 pages = [
                     View.MasterDetailPage(
                         useSafeArea = true,
@@ -386,7 +390,7 @@ module App =
                                               textColor = Color.White, 
                                               backgroundColor = Color.DarkSlateBlue, 
                                               command = (fun _ -> dispatch NewGame)) ]))) ])
-                    .ToolbarItems([View.ToolbarItem(text="about", command=(fun () -> dispatch ToolbarClicked))] )
+                    .ToolbarItems([ View.ToolbarItem(text = "about", command = (fun () -> dispatch ToolbarClicked))] )
         
     // Note, this declaration is needed if you enable LiveUpdate
     let program = Program.mkProgram init update view

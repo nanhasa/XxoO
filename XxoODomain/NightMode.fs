@@ -23,12 +23,6 @@ let nightModeSafeEmptyCell nightMode =
     then Color.FromHex "DDD4E7"
     else Color.AntiqueWhite
 
-let cellColor cellStatus nightMode =
-    match cellStatus with
-    | Played PlayerX -> nightModeSafePlayerXCell nightMode
-    | Played PlayerO -> nightModeSafePlayerOCell nightMode
-    | Empty -> nightModeSafeEmptyCell nightMode
-
 let nightModeSafeTextColor nightMode =
     if nightMode
     then Color.WhiteSmoke
